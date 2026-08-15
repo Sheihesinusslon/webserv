@@ -1,0 +1,12 @@
+obj/
+obj_bonus/
+*.o
+*.d
+*.a
+
+webserv
+webserv_bonus
+
+*.log
+*.out
+.DS_Store
