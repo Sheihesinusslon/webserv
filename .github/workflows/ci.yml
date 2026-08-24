@@ -1,0 +1,47 @@
+name: CI - build & tests
+
+on:
+  pull_request:
+    branches: [ main ]
+
+env:
+  BUILD_FLAGS: "-Wall -Wextra -Werror -std=c++98 -g -fsanitize=address,undefined"
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential valgrind
+
+      - name: Build (mandatory)
+        run: |
+          set -euo pipefail
+          make fclean
+          make CXXFLAGS="$BUILD_FLAGS" -j2
+          test -x ./webserv
+
+      - name: Build (bonus)
+        run: |
+          set -euo pipefail
+          make bonus CXXFLAGS="$BUILD_FLAGS" -j2
+          test -x ./webserv_bonus
+
+      - name: Run tests
+        run: |
+          set -euo pipefail
+          bash tests/run_tests.sh
+
+      - name: Check fclean
+        run: |
+          set -euo pipefail
+          make fclean
+          if [ -e ./webserv ] || [ -e ./webserv_bonus ] || [ -d ./obj ] || [ -d ./obj_bonus ]; then
+            echo "::error::fclean left build artifacts behind"
+            exit 1
+          fi
