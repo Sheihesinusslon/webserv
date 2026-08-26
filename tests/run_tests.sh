@@ -30,6 +30,8 @@ fi
 run_test "no argument"        0 $BIN
 run_test "one argument"       0 $BIN config/default.conf
 run_test "too many arguments" 1 $BIN a b
+run_test "missing config file"  1 $BIN config/does_not_exist.conf
+run_test "config path is a dir"  1 $BIN config
 
 echo "passed: $PASSED   failed: $FAILED"
 [ $FAILED -eq 0 ]
