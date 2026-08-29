@@ -240,6 +240,8 @@ The location prefix is **stripped**. Real nginx `root` would yield
 
 ## 7. Config grammar
 
+> Class diagrams and dataflow for the tokenizer/parser: [CONFIG_MODULE.md](CONFIG_MODULE.md)
+
 Defined by `config/default.conf`, which is the specification.
 
 **Server level:** `listen` (`host:port` or bare `port`), `server_name`, `root`, `index`,

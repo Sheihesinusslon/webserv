@@ -22,6 +22,10 @@ public:
 							const std::string &hostHeader) const;
 
 private:
+	bool	validate(const std::string &path);
+	void	inherit();
+	void	collectListeners();
+
 	std::vector<ServerConfig>	_servers;
 	std::vector<Listener>		_listeners;
 	std::string					_error;

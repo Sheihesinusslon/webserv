@@ -13,7 +13,12 @@ INC_DIR         = include
 INC_DIR_BONUS   = include/bonus
 
 SRC_CONFIG = \
-	config/ConfigTokenizer.cpp
+	config/Config.cpp \
+	config/ConfigParser.cpp \
+	config/ConfigTokenizer.cpp \
+	config/Listener.cpp \
+	config/LocationConfig.cpp \
+	config/ServerConfig.cpp
 
 SRC = \
 	main.cpp \
