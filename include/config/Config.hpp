@@ -23,6 +23,7 @@ public:
 
 private:
 	bool	validate(const std::string &path);
+	void	normalizeNames();
 	void	inherit();
 	void	collectListeners();
 

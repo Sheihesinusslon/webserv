@@ -4,7 +4,19 @@
 #include "webserv.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <sstream>
+
+static std::string	toLower(const std::string &text)
+{
+	std::string	out;
+	std::size_t	i;
+
+	out = text;
+	for (i = 0; i < out.size(); i++)
+		out[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(out[i])));
+	return (out);
+}
 
 Config::Config()
 {
@@ -45,6 +57,7 @@ bool	Config::load(const std::string &path)
 	}
 	if (!validate(path))
 		return (false);
+	normalizeNames();
 	inherit();
 	collectListeners();
 	return (true);
@@ -78,6 +91,18 @@ bool	Config::validate(const std::string &path)
 		}
 	}
 	return (true);
+}
+
+void	Config::normalizeNames()
+{
+	std::size_t	i;
+	std::size_t	j;
+
+	for (i = 0; i < _servers.size(); i++)
+	{
+		for (j = 0; j < _servers[i].serverNames.size(); j++)
+			_servers[i].serverNames[j] = toLower(_servers[i].serverNames[j]);
+	}
 }
 
 void	Config::inherit()
@@ -133,6 +158,7 @@ const ServerConfig	*Config::matchServer(const Listener &listener,
 	colon = host.rfind(':');
 	if (colon != std::string::npos)
 		host = host.substr(0, colon);
+	host = toLower(host);
 	fallback = NULL;
 	for (i = 0; i < _servers.size(); i++)
 	{

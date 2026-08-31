@@ -262,6 +262,9 @@ bool	ConfigParser::parseLocation(LocationConfig &location)
 		return (false);
 	if (location.path[0] != '/')
 		return (failAt(line, "location path must start with '/'"));
+	while (location.path.size() > 1
+		&& location.path[location.path.size() - 1] == '/')
+		location.path.erase(location.path.size() - 1);
 	if (!expectType(Token::BlockStart, "'{' after location path"))
 		return (false);
 	while (!atEnd() && peek().type != Token::BlockEnd)

@@ -27,7 +27,8 @@ How `config/default.conf` becomes a `Config` object tree.
           |
           v
   +-------------------+
-  | Config            |  validate() -> inherit() -> collectListeners()
+  | Config            |  validate() -> normalizeNames()
+  |                   |  -> inherit() -> collectListeners()
   +-------------------+
           |
           v
@@ -77,6 +78,70 @@ Your `default.conf` produces:
 
 `matchServer()` and `matchLocation()` return pointers **into** `Config`; `NULL` = no match.
 Valid as long as `Config` is alive.
+
+---
+
+## Matching rules
+
+### Which server — `matchServer(listener, hostHeader)`
+
+```
+  1. keep only servers that listen on this host:port
+  2. of those, the first whose server_name equals the Host header
+  3. no name match -> the FIRST one declared for that listener (the default)
+  4. nothing listens there -> NULL
+```
+
+The `Host` header is normalised first: `"Second.Test:8081"` -> strip `:port` ->
+lowercase -> `"second.test"`. `server_name` values are lowercased at load time, so the
+comparison is a plain `==`. Host names are case-insensitive (RFC 9110); paths are not.
+
+Step 1 plus step 2 is **virtual hosting** — several sites on one socket, told apart
+only by `Host`:
+
+```
+  0.0.0.0:8081  +--> Host: webserv.test  -> server[0]   www/site
+                +--> Host: second.test   -> server[1]   www/second
+                +--> Host: anything else -> server[0]   (first declared)
+```
+
+### Which location — `matchLocation(path)`
+
+```
+  longest matching prefix wins; order in the file is irrelevant
+```
+
+Two refinements:
+
+- **The prefix must end on a boundary.** `/assetsfoo` does *not* match `location /assets`
+  — the match has to end at a `/` or at end-of-string. (nginx uses a pure string prefix
+  and would match it; we deliberately don't.)
+- **Trailing slashes are stripped at load.** `location /trailing/` is stored as
+  `/trailing`, so both spellings behave the same.
+
+Worked example. A server declaring four locations:
+
+```
+  location /          location /a          location /a/b          location /assets
+```
+
+| request path | matches | why |
+|---|---|---|
+| `/` | `/` | only `/` is a prefix |
+| `/index.html` | `/` | no other location is a prefix |
+| `/assets/x.png` | `/assets` | both `/` and `/assets` fit; `/assets` is longer |
+| `/assetsfoo` | `/` | `/assets` is rejected by the boundary rule |
+| `/a/b/c/d` | `/a/b` | `/`, `/a` and `/a/b` all fit; longest wins |
+| `/a/x` | `/a` | `/a/b` is not a prefix of `/a/x` |
+| `/a/bc` | `/a` | `/a/b` is rejected by the boundary rule |
+| `/nope` | `/` | nothing more specific fits, so the catch-all takes it |
+
+The boundary rule, up close — the character right after the prefix must be `/`
+or nothing at all:
+
+
+If this server had no `location /`, the rows above that fall back to `/` would return
+`NULL` instead — meaning no location matched at all.
 
 ---
 
