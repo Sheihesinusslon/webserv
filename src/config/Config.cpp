@@ -18,6 +18,33 @@ static std::string	toLower(const std::string &text)
 	return (out);
 }
 
+/*
+** Drops the optional ":port" from a Host header value.  A host may be an IPv6
+** literal in brackets ("[::1]", "[::1]:8080"), where only a colon that follows
+** the closing bracket separates the port; the colons inside must be kept.
+*/
+static std::string	stripPort(const std::string &hostHeader)
+{
+	std::string	host;
+	std::size_t	colon;
+
+	host = hostHeader;
+	if (!host.empty() && host[0] == '[')
+	{
+		colon = host.find(']');
+		if (colon == std::string::npos)
+			return (host);
+		colon++;
+		if (colon < host.size() && host[colon] == ':')
+			host.erase(colon);
+		return (host);
+	}
+	colon = host.rfind(':');
+	if (colon != std::string::npos)
+		host.erase(colon);
+	return (host);
+}
+
 Config::Config()
 {
 }
@@ -151,14 +178,9 @@ const ServerConfig	*Config::matchServer(const Listener &listener,
 {
 	const ServerConfig	*fallback;
 	std::string			host;
-	std::size_t			colon;
 	std::size_t			i;
 
-	host = hostHeader;
-	colon = host.rfind(':');
-	if (colon != std::string::npos)
-		host = host.substr(0, colon);
-	host = toLower(host);
+	host = toLower(stripPort(hostHeader));
 	fallback = NULL;
 	for (i = 0; i < _servers.size(); i++)
 	{

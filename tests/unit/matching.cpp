@@ -87,6 +87,12 @@ static void	testVirtualHosting(const Config &config)
 		matchedRoot(config, DEFAULT_HOST, 8081, "mixed.test"), "www/second");
 	checkEqual("case-insensitive with port",
 		matchedRoot(config, DEFAULT_HOST, 8081, "Webserv.Test:8081"), "www/site");
+	checkEqual("ipv6 literal with port",
+		matchedRoot(config, DEFAULT_HOST, 8081, "[::1]:8081"), "www/second");
+	checkEqual("bare ipv6 literal keeps its colons",
+		matchedRoot(config, DEFAULT_HOST, 8081, "[::1]"), "www/second");
+	checkEqual("unterminated bracket is left alone",
+		matchedRoot(config, DEFAULT_HOST, 8081, "[::1"), "www/site");
 
 	std::cout << "-- matchServer: listener narrows the candidates" << std::endl;
 	checkEqual("name not listening here falls back",
