@@ -123,9 +123,10 @@ echo "-- unit tests against the config objects"
 UNIT_SRC="src/config/Config.cpp src/config/ConfigParser.cpp \
 	src/config/ConfigTokenizer.cpp src/config/Listener.cpp \
 	src/config/LocationConfig.cpp src/config/ServerConfig.cpp"
+UNIT_CXXFLAGS="${UNIT_CXXFLAGS:--Wall -Wextra -Werror -std=c++98}"
 for UNIT_TEST in tests/unit/*.cpp; do
 	UNIT_BIN="$(mktemp -u /tmp/webserv_unit.XXXXXX)"
-	if c++ -Wall -Wextra -Werror -std=c++98 -Iinclude \
+	if c++ $UNIT_CXXFLAGS -Iinclude \
 		"$UNIT_TEST" $UNIT_SRC -o "$UNIT_BIN" 2>/dev/null; then
 		UNIT_OUT=$("$UNIT_BIN")
 		echo "$UNIT_OUT" | grep -v "^unit passed:"

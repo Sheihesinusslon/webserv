@@ -5,37 +5,58 @@ on:
     branches: [ main ]
 
 env:
-  BUILD_FLAGS: "-Wall -Wextra -Werror -std=c++98 -g -fsanitize=address,undefined"
+  WARN_FLAGS: "-Wall -Wextra -Werror -std=c++98 -g"
+  # -fno-sanitize-recover turns UBSan findings into aborts; by default UBSan
+  # prints a diagnostic and lets the program continue with exit status 0.
+  SAN_FLAGS: "-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"
+  # tests/run_tests.sh redirects program output to /dev/null, so sanitizer
+  # reports must go to files instead of stderr or they would be swallowed.
+  SAN_LOG_DIR: /tmp/sanitizer
+  ASAN_OPTIONS: "detect_leaks=1:log_path=/tmp/sanitizer/report"
+  UBSAN_OPTIONS: "print_stacktrace=1"
 
 jobs:
   build-and-test:
+    name: Build & test (ASan + UBSan)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential valgrind
+      - name: Prepare sanitizer log directory
+        run: mkdir -p "$SAN_LOG_DIR"
 
       - name: Build (mandatory)
         run: |
           set -euo pipefail
           make fclean
-          make CXXFLAGS="$BUILD_FLAGS" -j2
+          make CXXFLAGS="$WARN_FLAGS $SAN_FLAGS" -j2
           test -x ./webserv
 
       - name: Build (bonus)
         run: |
           set -euo pipefail
-          make bonus CXXFLAGS="$BUILD_FLAGS" -j2
+          make bonus CXXFLAGS="$WARN_FLAGS $SAN_FLAGS" -j2
           test -x ./webserv_bonus
 
       - name: Run tests
         run: |
           set -euo pipefail
+          # run_tests.sh compiles tests/unit/*.cpp itself; hand it the same
+          # instrumentation so the unit binaries are sanitized too.
+          export UNIT_CXXFLAGS="$WARN_FLAGS $SAN_FLAGS"
           bash tests/run_tests.sh
+
+      - name: Check for sanitizer reports
+        if: always()
+        run: |
+          set -euo pipefail
+          if find "$SAN_LOG_DIR" -name 'report.*' -type f | grep -q .; then
+            echo "::error::AddressSanitizer/UndefinedBehaviorSanitizer reported problems"
+            cat "$SAN_LOG_DIR"/report.*
+            exit 1
+          fi
+          echo "No sanitizer reports."
 
       - name: Check fclean
         run: |
@@ -45,3 +66,38 @@ jobs:
             echo "::error::fclean left build artifacts behind"
             exit 1
           fi
+
+  static-analysis:
+    name: Static analysis (cppcheck)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install cppcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cppcheck
+
+      - name: cppcheck - correctness (blocking)
+        run: |
+          set -euo pipefail
+          cppcheck --std=c++03 --library=posix \
+                   --enable=warning,performance,portability \
+                   --inline-suppr \
+                   --suppress=missingIncludeSystem \
+                   --error-exitcode=1 \
+                   -I include -I include/bonus \
+                   -j 2 src
+
+      - name: cppcheck - style (advisory)
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          cppcheck --std=c++03 --library=posix \
+                   --enable=style \
+                   --inline-suppr \
+                   --suppress=missingIncludeSystem \
+                   --error-exitcode=1 \
+                   -I include -I include/bonus \
+                   -j 2 src
