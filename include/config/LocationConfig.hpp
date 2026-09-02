@@ -30,6 +30,7 @@ struct LocationConfig
 	bool		hasRedirect() const;
 	bool		uploadsAllowed() const;
 	std::string	cgiInterpreter(const std::string &extension) const;
+	std::string	resolvePath(const std::string &uri) const;
 };
 
 #endif

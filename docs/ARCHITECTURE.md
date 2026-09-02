@@ -3,6 +3,19 @@
 Reference document for the team. Describes the module boundaries, who owns what,
 the contracts between modules, and how each subject requirement maps to an owner.
 
+**Status**
+
+| part | state |
+|---|---|
+| A - config & routing | **done** - parse, validate, inherit, matchServer, matchLocation, resolvePath; 139 tests |
+| B - transport & event loop | not started - no `include/net/`, no `src/net/` |
+| C - http & handlers | not started - no `include/http/`, no `src/http/` |
+| CGI | not started |
+| `www/` content + Python test suite | not started |
+
+Still thin in A: nothing rejects two servers claiming the same `host:port` *and* the
+same `server_name`; roots and CGI interpreters are not checked to exist on disk.
+
 ---
 
 ## 1. The rule that shapes everything
@@ -84,6 +97,7 @@ Turns the config file into an immutable in-memory model and answers routing ques
 | Directive inheritance (location inherits from server) | |
 | Deduplicating `listen` into unique `host:port` listeners | |
 | `matchServer()` and `matchLocation()` resolution | |
+| `resolvePath()` - URL to filesystem path, plus containment check | |
 
 - **Input:** a file path.
 - **Output:** an object graph that B and C query, read-only, for the process lifetime.
@@ -123,7 +137,7 @@ Owns the protocol and the decision of what to do with a request.
 | Built-in default error pages | |
 | GET, static files, MIME types, autoindex listing | |
 | POST uploads (`multipart/form-data`), DELETE, redirects | |
-| Path normalisation and traversal rejection (403) | |
+| URI normalisation *before* matching (see section 6) | |
 
 - **Input:** a byte buffer plus the resolved `ServerConfig` / `LocationConfig`.
 - **Output:** a fully serialized response buffer.
@@ -142,7 +156,7 @@ naturally lands there.
 
 ## 4. Contracts
 
-Three interfaces. Pin these down before splitting; everything else is private.
+Two interfaces. Pin these down before splitting; everything else is private.
 
 ### A exposes
 
@@ -157,7 +171,15 @@ const ServerConfig     *Config::matchServer(const Listener &listener,
 
 const LocationConfig   *ServerConfig::matchLocation(const std::string &path) const;
 std::string             ServerConfig::errorPage(int code) const;
+
+std::string             LocationConfig::resolvePath(const std::string &uri) const;
+bool                    LocationConfig::isMethodAllowed(const std::string &m) const;
+std::string             LocationConfig::cgiInterpreter(const std::string &ext) const;
 ```
+
+`resolvePath()` returns an empty string when the mapped path escapes `root` - the
+caller answers 403. It does no disk I/O: no `stat`, no existence check, no `index`
+handling. Those belong to C's static-file handler.
 
 `load()` returns `false` and fills `Config::error()` rather than throwing, so a bad
 config can never take the process down.
@@ -185,16 +207,17 @@ writing B's state machine; retrofitting it later means rewriting the loop.
 1. **B** — `poll()` reports a listening socket is readable; `accept()` a client.
 2. **B** — `poll()` reports the client is readable; `recv()` into its input buffer.
 3. **C** — `feed()` the new bytes. Not complete yet? Return to the loop.
-4. **A** — headers are complete: resolve `host:port` + `Host` header to a `ServerConfig`,
-   then the normalised path to a `LocationConfig`.
-5. **C** — enforce the location's rules: allowed method (405), body size (413),
-   redirect (301), path traversal (403).
-6. **C** — run the handler: read a file, generate an autoindex page, store an upload,
+4. **C** — normalise the URI: strip the query string, percent-decode, resolve `.` / `..`.
+5. **A** — resolve `host:port` + `Host` to a `ServerConfig`, then the normalised path to
+   a `LocationConfig`, then `resolvePath()` to a filesystem path.
+6. **C** — enforce the location's rules: allowed method (405), body size (413),
+   redirect (301), empty path from `resolvePath()` (403).
+7. **C** — run the handler: read a file, generate an autoindex page, store an upload,
    delete a file, or start a CGI.
-7. **C** — serialize status line, headers, and body into one buffer.
-8. **B** — `poll()` reports the client is writable; `send()` part of the buffer.
+8. **C** — serialize status line, headers, and body into one buffer.
+9. **B** — `poll()` reports the client is writable; `send()` part of the buffer.
    Repeat until drained.
-9. **B** — keep the connection alive or close it; reset state either way.
+10. **B** — keep the connection alive or close it; reset state either way.
 
 At no point does C call `recv`, `send`, or `poll`. At no point does B inspect a header.
 
@@ -210,6 +233,10 @@ Both are **code**, not config; nginx works the same way. The config only supplie
 2. Exact `server_name` match against the request's `Host` header.
 3. No match: the **first block declared** for that `host:port` is the default.
 
+The `Host` header is normalised first - `:port` stripped, then lowercased - and
+`server_name` values are lowercased at load, so the comparison is a plain `==`.
+Host names are case-insensitive (RFC 9110); paths are not.
+
 Wildcards, regex and nginx's `default_server` flag are out of scope.
 
 ### Which location
@@ -219,9 +246,13 @@ regex is required, which removes nginx's `=`, `^~`, `~` and `~*` modifiers entir
 
 Two rules that matter more than the algorithm:
 
-- **Normalise before matching:** strip the query string, percent-decode, then resolve
-  `.` and `..` — in that order. Matching first and normalising later lets
-  `/uploads/../../etc/passwd` inherit `/uploads`' permissions and then escape the root.
+- **Normalise before matching — C's job, step 4 above:** strip the query string,
+  percent-decode, then resolve `.` and `..`, in that order. Matching first and
+  normalising later lets `/uploads/../../etc/passwd` inherit `/uploads`' permissions
+  and then escape the root. `resolvePath()` re-checks containment afterwards regardless,
+  so a caller that forgets cannot open a hole.
+- **Location paths are normalised at load:** `location /trailing/` is stored as
+  `/trailing`, so both spellings behave identically.
 - **Prefix boundary:** nginx's prefix match is a pure string prefix, so `location /assets`
   also matches `/assetsfoo`. Requiring the match to end at a `/` or end-of-string avoids
   that surprise. It deviates from nginx; nothing in the evaluation tests it.
@@ -265,14 +296,23 @@ Decisions baked in:
 
 ```
 include/
-  config/   Config.hpp  ServerConfig.hpp  LocationConfig.hpp  ConfigParser.hpp   (A)
-  net/      Listener.hpp  EventLoop.hpp  Connection.hpp                          (B)
-  http/     HttpRequest.hpp  HttpResponse.hpp  RequestHandler.hpp  HttpStatus.hpp (C)
-  cgi/      Cgi.hpp                                                            (B + C)
+  webserv.hpp                                            shared constants
+  config/   Config.hpp  ServerConfig.hpp  LocationConfig.hpp
+            Listener.hpp  ConfigParser.hpp  ConfigTokenizer.hpp     (A)   exists
+  net/      Socket.hpp  EventLoop.hpp  Connection.hpp               (B)   to write
+  http/     HttpRequest.hpp  HttpResponse.hpp
+            RequestHandler.hpp  HttpStatus.hpp                      (C)   to write
+  cgi/      Cgi.hpp                                                 (B+C) to write
   bonus/    bonus-only headers
 src/
   config/  net/  http/  cgi/  main.cpp
+tests/
+  configs/  valid/ and invalid/ fixtures
+  unit/     matching.cpp  paths.cpp - compiled and run by tests/run_tests.sh
 ```
+
+`Listener` lives in `config/`, not `net/`: A produces it, B only consumes it. Keeping it
+on A's side means B depends on A's headers and never the reverse.
 
 Split the Makefile source list per owner so three people adding files never collide on
 the same line:

@@ -119,21 +119,23 @@ expect_output "names the bad method"     "PATCH"                    $BIN tests/c
 expect_output "reports missing listen"   "no 'listen'"              $BIN tests/configs/invalid/no_listen.conf
 expect_output "reports duplicate loc"    "duplicate location '/a'"  $BIN tests/configs/invalid/duplicate_location.conf
 
-echo "-- routing (unit tests against the config objects)"
-UNIT_BIN="$(mktemp -u /tmp/webserv_unit.XXXXXX)"
+echo "-- unit tests against the config objects"
 UNIT_SRC="src/config/Config.cpp src/config/ConfigParser.cpp \
 	src/config/ConfigTokenizer.cpp src/config/Listener.cpp \
 	src/config/LocationConfig.cpp src/config/ServerConfig.cpp"
-if c++ -Wall -Wextra -Werror -std=c++98 -Iinclude \
-	tests/unit/matching.cpp $UNIT_SRC -o "$UNIT_BIN" 2>/dev/null; then
-	UNIT_OUT=$("$UNIT_BIN")
-	echo "$UNIT_OUT" | grep -v "^unit passed:"
-	PASSED=$((PASSED + $(echo "$UNIT_OUT" | grep -c "^OK")))
-	FAILED=$((FAILED + $(echo "$UNIT_OUT" | grep -c "^KO")))
-	rm -f "$UNIT_BIN"
-else
-	ko "routing unit tests failed to compile"
-fi
+for UNIT_TEST in tests/unit/*.cpp; do
+	UNIT_BIN="$(mktemp -u /tmp/webserv_unit.XXXXXX)"
+	if c++ -Wall -Wextra -Werror -std=c++98 -Iinclude \
+		"$UNIT_TEST" $UNIT_SRC -o "$UNIT_BIN" 2>/dev/null; then
+		UNIT_OUT=$("$UNIT_BIN")
+		echo "$UNIT_OUT" | grep -v "^unit passed:"
+		PASSED=$((PASSED + $(echo "$UNIT_OUT" | grep -c "^OK")))
+		FAILED=$((FAILED + $(echo "$UNIT_OUT" | grep -c "^KO")))
+		rm -f "$UNIT_BIN"
+	else
+		ko "$(basename "$UNIT_TEST") failed to compile"
+	fi
+done
 
 echo
 echo "passed: $PASSED   failed: $FAILED"

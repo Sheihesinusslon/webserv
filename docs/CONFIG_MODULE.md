@@ -7,7 +7,7 @@ How `config/default.conf` becomes a `Config` object tree.
 ## Flow
 
 ```
-  config/default.conf                     text
+  config/default.conf
           |
           v
   +-------------------+
@@ -15,7 +15,7 @@ How `config/default.conf` becomes a `Config` object tree.
   +-------------------+
           |
           v
-   vector<Token>                          160 tokens
+   vector<Token>
           |
           v
   +-------------------+
@@ -23,7 +23,7 @@ How `config/default.conf` becomes a `Config` object tree.
   +-------------------+
           |
           v
-   vector<ServerConfig>                   raw structs
+   vector<ServerConfig>
           |
           v
   +-------------------+
@@ -52,10 +52,10 @@ Only `Config` survives.
   |        +-- listens    : vector<Listener>     1..n
   |        +-- locations  : vector<LocationConfig>  0..n
   |
-  +-- _listeners : vector<Listener>              all listens, flattened + deduped
+  +-- _listeners : vector<Listener>              all listens, flattened + deduped, unique
 ```
 
-Your `default.conf` produces:
+`default.conf` produces:
 
 ```
   Config
@@ -143,26 +143,32 @@ or nothing at all:
 If this server had no `location /`, the rows above that fall back to `/` would return
 `NULL` instead — meaning no location matched at all.
 
----
+### URL to file — `LocationConfig::resolvePath(uri)`
 
-## Grammar
-
-```
-  config     = server+
-  server     = "server" "{" ( directive | location )* "}"
-  location   = "location" path "{" directive* "}"
-  directive  = name word* ";"
-```
-
-One `{ }` level in the file = one recursion level in the parser:
+The location prefix is **stripped** and replaced by `root` — alias semantics, per the
+subject's example.
 
 ```
-  server {                 ->  parseServer()
-      listen 8081;         ->      applyServerDirective()
-      location /a {        ->      parseLocation()
-          allow_methods    ->          applyLocationDirective()
-      }
-  }
+  uri            /kapouet/pouic/toto/pouet
+  location.path  /kapouet                    <- strip
+  location.root  /tmp/www                    <- prepend
+                 -------------------------------------------
+  result         /tmp/www/pouic/toto/pouet
 ```
+
+Steps: strip the prefix, join with `root`, resolve `.` `..` and `//` lexically, then
+check the result is still inside `root`. Escapes return `""` -> caller answers **403**.
+
+```
+  /kapouet/a/../b        -> /tmp/www/b          stays inside
+  /kapouet/../../etc     -> ""                  escapes -> 403
+  /kapouet//./x          -> /tmp/www/x          collapsed
+  /kapouet               -> /tmp/www            exact match
+```
+
+> **Consequence worth knowing:** the prefix always disappears. `location /assets` with
+> an inherited `root www/site` maps `/assets/logo.png` to `www/site/logo.png`, *not*
+> `www/site/assets/logo.png`. To serve a matching folder, set the root explicitly:
+> `location /assets { root www/site/assets; }`.
 
 ---
