@@ -119,6 +119,26 @@ expect_output "names the bad method"     "PATCH"                    $BIN tests/c
 expect_output "reports missing listen"   "no 'listen'"              $BIN tests/configs/invalid/no_listen.conf
 expect_output "reports duplicate loc"    "duplicate location '/a'"  $BIN tests/configs/invalid/duplicate_location.conf
 
+echo "-- server blocks must stay reachable"
+expect_output "duplicate server_name"    "duplicate server_name 'shop.test' on listener 0.0.0.0:8300" \
+	$BIN tests/configs/invalid/duplicate_server_name.conf
+expect_output "two nameless defaults"    "two server blocks without 'server_name' on listener 0.0.0.0:8301" \
+	$BIN tests/configs/invalid/two_default_servers.conf
+expect_output "named + default is fine"  "server[1] listen 0.0.0.0:8302" \
+	$BIN tests/configs/valid/default_and_named.conf
+
+echo "-- listen values must be a real host"
+expect_output "junk host rejected"       "invalid listen value" \
+	$BIN tests/configs/invalid/bad_listen_host.conf
+expect_output "junk host with port too"  "invalid listen value" \
+	$BIN tests/configs/invalid/bad_listen_host_port.conf
+expect_output "underscore host kept"     "listen my_host.local:8500" \
+	$BIN tests/configs/valid/listen_hosts.conf
+expect_output "ipv4-mapped ipv6 kept"    "listen [::ffff:192.0.2.1]:8501" \
+	$BIN tests/configs/valid/listen_hosts.conf
+expect_output "ipv6 zone id kept"        "listen [fe80::1%eth0]:8502" \
+	$BIN tests/configs/valid/listen_hosts.conf
+
 echo "-- unit tests against the config objects"
 UNIT_SRC="src/config/Config.cpp src/config/ConfigParser.cpp \
 	src/config/ConfigTokenizer.cpp src/config/Listener.cpp \

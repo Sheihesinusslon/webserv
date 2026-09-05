@@ -82,9 +82,9 @@ bool	Config::load(const std::string &path)
 		_error = path + ": " + parser.error();
 		return (false);
 	}
+	normalizeNames();
 	if (!validate(path))
 		return (false);
-	normalizeNames();
 	inherit();
 	collectListeners();
 	return (true);
@@ -112,6 +112,43 @@ bool	Config::validate(const std::string &path)
 				{
 					_error = path + ": duplicate location '"
 						+ _servers[i].locations[j].path + "'";
+					return (false);
+				}
+			}
+		}
+	}
+	return (checkServerCollisions(path));
+}
+
+bool	Config::checkServerCollisions(const std::string &path)
+{
+	std::size_t	i;
+	std::size_t	j;
+	std::size_t	l;
+	std::size_t	n;
+
+	for (i = 0; i < _servers.size(); i++)
+	{
+		for (j = i + 1; j < _servers.size(); j++)
+		{
+			for (l = 0; l < _servers[i].listens.size(); l++)
+			{
+				if (!_servers[j].listensOn(_servers[i].listens[l]))
+					continue;
+				if (_servers[i].serverNames.empty()
+					&& _servers[j].serverNames.empty())
+				{
+					_error = path + ": two server blocks without 'server_name'"
+						" on listener " + _servers[i].listens[l].key();
+					return (false);
+				}
+				for (n = 0; n < _servers[i].serverNames.size(); n++)
+				{
+					if (!_servers[j].hasServerName(_servers[i].serverNames[n]))
+						continue;
+					_error = path + ": duplicate server_name '"
+						+ _servers[i].serverNames[n] + "' on listener "
+						+ _servers[i].listens[l].key();
 					return (false);
 				}
 			}

@@ -92,6 +92,10 @@ Valid as long as `Config` is alive.
   4. nothing listens there -> NULL
 ```
 
+Because step 2 relies on the name, `load()` rejects two server blocks that share a
+listener and cannot be told apart: same `server_name`, or neither having one. A named
+block and a nameless default may share a listener - that is ordinary virtual hosting.
+
 The `Host` header is normalised first: `"Second.Test:8081"` -> strip `:port` ->
 lowercase -> `"second.test"`. `server_name` values are lowercased at load time, so the
 comparison is a plain `==`. Host names are case-insensitive (RFC 9110); paths are not.

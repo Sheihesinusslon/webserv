@@ -275,8 +275,9 @@ The location prefix is **stripped**. Real nginx `root` would yield
 
 Defined by `config/default.conf`, which is the specification.
 
-**Server level:** `listen` (`host:port` or bare `port`), `server_name`, `root`, `index`,
-`autoindex`, `client_max_body_size`, `error_page <code> <path>`
+**Server level:** `listen` (`host:port`, bare `port`, or bare `host` — port 80),
+`server_name`, `root`, `index`, `autoindex`, `client_max_body_size`,
+`error_page <code> <path>`
 
 **Location level:** `allow_methods`, `root`, `index`, `autoindex`,
 `client_max_body_size`, `return <code> <url>`, `upload_store <dir>`,
