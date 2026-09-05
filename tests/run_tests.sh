@@ -138,6 +138,10 @@ expect_output "ipv4-mapped ipv6 kept"    "listen [::ffff:192.0.2.1]:8501" \
 	$BIN tests/configs/valid/listen_hosts.conf
 expect_output "ipv6 zone id kept"        "listen [fe80::1%eth0]:8502" \
 	$BIN tests/configs/valid/listen_hosts.conf
+expect_output "bare ipv6 gets port 80"   "listen [::1]:80" \
+	$BIN tests/configs/valid/listen_hosts.conf
+expect_output "ipv6 wildcard kept"       "listen [::]:8504" \
+	$BIN tests/configs/valid/listen_hosts.conf
 
 echo "-- unit tests against the config objects"
 UNIT_SRC="src/config/Config.cpp src/config/ConfigParser.cpp \

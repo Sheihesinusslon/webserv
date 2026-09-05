@@ -81,6 +81,20 @@ Valid as long as `Config` is alive.
 
 ---
 
+## `listen` values
+
+Three forms, as in nginx: `host:port`, bare `port` (host defaults to `0.0.0.0`), and
+bare `host` (port defaults to `80`). A colon-less value is a port when it is all
+digits, otherwise a host.
+
+The host is validated against the `host` rule of RFC 3986 section 3.2.2 — a `reg-name`
+or IPv4 literal (letters, digits and the unreserved marks `.` `-` `_` `~`), or a
+bracketed `IP-literal`: `[::1]`, the IPv4-mapped `[::ffff:192.0.2.1]`, or a zone id
+`[fe80::1%eth0]` (RFC 6874). Sub-delims that RFC 3986 permits in a `reg-name` (`$`,
+`!`, …) are rejected: a `listen` host must be resolvable, not merely URI-legal.
+
+---
+
 ## Matching rules
 
 ### Which server — `matchServer(listener, hostHeader)`
@@ -99,6 +113,10 @@ block and a nameless default may share a listener - that is ordinary virtual hos
 The `Host` header is normalised first: `"Second.Test:8081"` -> strip `:port` ->
 lowercase -> `"second.test"`. `server_name` values are lowercased at load time, so the
 comparison is a plain `==`. Host names are case-insensitive (RFC 9110); paths are not.
+
+Stripping the port is bracket-aware: an IPv6 literal carries its own colons, so only a
+colon *after* the closing `]` separates the port (`[::1]:8081` -> `[::1]`, `[::1]` kept
+whole). This is the `IP-literal` host form of RFC 3986 section 3.2.2.
 
 Step 1 plus step 2 is **virtual hosting** — several sites on one socket, told apart
 only by `Host`:

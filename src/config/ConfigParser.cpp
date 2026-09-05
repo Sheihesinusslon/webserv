@@ -86,13 +86,6 @@ static bool	parseBool(const std::string &text, bool &out)
 	return (false);
 }
 
-/*
-** Accepts the host forms of RFC 3986 section 3.2.2: a reg-name or IPv4
-** literal (letters, digits and the unreserved marks '.', '-', '_', '~'), or
-** an IP-literal in brackets - "[::1]", the IPv4-mapped "[::ffff:192.0.2.1]",
-** or a zone id "[fe80::1%eth0]" from RFC 6874.  Without this, any leftover
-** text was accepted as a hostname and produced a listener that never binds.
-*/
 static bool	isValidHost(const std::string &host)
 {
 	std::size_t	zone;
@@ -135,6 +128,24 @@ static bool	parseListenValue(const std::string &text, Listener &out)
 {
 	std::size_t	colon;
 
+	if (!text.empty() && text[0] == '[')
+	{
+		colon = text.find(']');
+		if (colon == std::string::npos)
+			return (false);
+		colon++;
+		out.host = text.substr(0, colon);
+		if (!isValidHost(out.host))
+			return (false);
+		if (colon == text.size())
+		{
+			out.port = DEFAULT_PORT;
+			return (true);
+		}
+		if (text[colon] != ':')
+			return (false);
+		return (parsePort(text.substr(colon + 1), out.port));
+	}
 	colon = text.rfind(':');
 	if (colon == std::string::npos)
 	{

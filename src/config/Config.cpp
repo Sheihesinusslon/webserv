@@ -18,11 +18,6 @@ static std::string	toLower(const std::string &text)
 	return (out);
 }
 
-/*
-** Drops the optional ":port" from a Host header value.  A host may be an IPv6
-** literal in brackets ("[::1]", "[::1]:8080"), where only a colon that follows
-** the closing bracket separates the port; the colons inside must be kept.
-*/
 static std::string	stripPort(const std::string &hostHeader)
 {
 	std::string	host;

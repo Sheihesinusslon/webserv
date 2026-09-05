@@ -65,6 +65,8 @@ TODO
 
 - [Common Gateway Interface (CGI)](https://en.wikipedia.org/wiki/Common_Gateway_Interface) — the CGI link given in the subject
 - [RFC 2616 — HTTP/1.1](https://datatracker.ietf.org/doc/html/rfc2616)
+- [RFC 3986 — URI Generic Syntax](https://datatracker.ietf.org/doc/html/rfc3986#section-3.2.2) — the `host` grammar used to validate `listen` values and to strip the port from a `Host` header
+- [RFC 6874 — IPv6 zone identifiers in literals](https://datatracker.ietf.org/doc/html/rfc6874)
 - [MDN — HTTP overview](https://developer.mozilla.org/en-US/docs/Web/HTTP)
 - [Beej's Guide to Network Programming](https://beej.us/guide/bgnet/)
 - [NGINX — ngx_http_core_module (server / location directives)](https://nginx.org/en/docs/http/ngx_http_core_module.html)
