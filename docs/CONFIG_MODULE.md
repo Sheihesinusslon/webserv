@@ -102,8 +102,9 @@ bracketed `IP-literal`: `[::1]`, the IPv4-mapped `[::ffff:192.0.2.1]`, or a zone
 ```
   1. keep only servers that listen on this host:port
   2. of those, the first whose server_name equals the Host header
-  3. no name match -> the FIRST one declared for that listener (the default)
-  4. nothing listens there -> NULL
+  3. no name match -> the one WITHOUT a server_name on that listener (the default)
+  4. no nameless one either -> the FIRST declared for that listener
+  5. nothing listens there -> NULL
 ```
 
 Because step 2 relies on the name, `load()` rejects two server blocks that share a
@@ -124,7 +125,8 @@ only by `Host`:
 ```
   0.0.0.0:8081  +--> Host: webserv.test  -> server[0]   www/site
                 +--> Host: second.test   -> server[1]   www/second
-                +--> Host: anything else -> server[0]   (first declared)
+                +--> Host: anything else -> the nameless block if there is one,
+                                            otherwise server[0] (first declared)
 ```
 
 ### Which location — `matchLocation(path)`

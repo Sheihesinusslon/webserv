@@ -7,8 +7,8 @@ the contracts between modules, and how each subject requirement maps to an owner
 
 | part | state |
 |---|---|
-| A - config & routing | **done** - parse, validate, inherit, matchServer, matchLocation, resolvePath; 139 tests |
-| B - transport & event loop | not started - no `include/net/`, no `src/net/` |
+| A - config & routing | **done** - parse, validate, inherit, matchServer, matchLocation, resolvePath |
+| B - transport & event loop | **walking skeleton done** - `Socket`, `Connection`, `EventLoop`: single `poll()`, accept, read, write, idle timeout, SIGINT/SIGTERM. Answers a hardcoded `200 OK`; the request-complete check is a placeholder for C |
 | C - http & handlers | not started - no `include/http/`, no `src/http/` |
 | CGI | not started |
 | `www/` content + Python test suite | not started |
@@ -106,6 +106,8 @@ Turns the config file into an immutable in-memory model and answers routing ques
   unit-tested without a running server.
 
 ### Part B — Transport & Event Loop
+
+> Internals of the loop, with diagrams: [NET_MODULE.md](NET_MODULE.md)
 
 Owns every file descriptor in the process.
 
@@ -231,7 +233,13 @@ Both are **code**, not config; nginx works the same way. The config only supplie
 
 1. Narrow to blocks listening on the connection's `host:port`.
 2. Exact `server_name` match against the request's `Host` header.
-3. No match: the **first block declared** for that `host:port` is the default.
+3. No match: the block **without a `server_name`** on that `host:port` is the default.
+4. No nameless block either: the **first block declared** for that `host:port`.
+
+Validation guarantees at most one nameless block per listener, so step 3 is never
+ambiguous. This differs from nginx (first declared, or `default_server`) but is
+order-independent and matches how people read a config: the unnamed block is the
+catch-all.
 
 The `Host` header is normalised first - `:port` stripped, then lowercased - and
 `server_name` values are lowercased at load, so the comparison is a plain `==`.
@@ -300,7 +308,7 @@ include/
   webserv.hpp                                            shared constants
   config/   Config.hpp  ServerConfig.hpp  LocationConfig.hpp
             Listener.hpp  ConfigParser.hpp  ConfigTokenizer.hpp     (A)   exists
-  net/      Socket.hpp  EventLoop.hpp  Connection.hpp               (B)   to write
+  net/      Socket.hpp  EventLoop.hpp  Connection.hpp                  (B)   exists
   http/     HttpRequest.hpp  HttpResponse.hpp
             RequestHandler.hpp  HttpStatus.hpp                      (C)   to write
   cgi/      Cgi.hpp                                                 (B+C) to write
@@ -309,11 +317,19 @@ src/
   config/  net/  http/  cgi/  main.cpp
 tests/
   configs/  valid/ and invalid/ fixtures
-  unit/     matching.cpp  paths.cpp - compiled and run by tests/run_tests.sh
+  unit/     config.cpp  matching.cpp  paths.cpp  loop.cpp - run by tests/run_tests.sh
 ```
 
 `Listener` lives in `config/`, not `net/`: A produces it, B only consumes it. Keeping it
 on A's side means B depends on A's headers and never the reverse.
+
+### Running vs. checking
+
+```
+./webserv [file]        run: bind every listener, serve
+./webserv -t [file]     test the config: verdict on stderr, exit 0 / 1       (nginx -t)
+./webserv -T [file]     test and dump: config on stdout, verdict on stderr  (nginx -T)
+```
 
 Split the Makefile source list per owner so three people adding files never collide on
 the same line:

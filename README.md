@@ -34,10 +34,23 @@ The project is compiled with `c++ -Wall -Wextra -Werror -std=c++98`
 ### Run
 
 ```sh
-./webserv [configuration file]
+./webserv [configuration file]        # start the server
+./webserv -t [configuration file]     # test the configuration and exit
+./webserv -T [configuration file]     # test the configuration, dump it, and exit
 ```
 
 If no configuration file is given, `config/default.conf` is used.
+
+```
+$ ./webserv -t config/default.conf
+webserv: configuration file config/default.conf test is successful
+
+$ ./webserv -t broken.conf
+webserv: broken.conf: line 3: unknown directive 'autoindeks' in server block
+```
+
+Stop a running server with `Ctrl-C` (`SIGINT`) or `SIGTERM`; it closes every socket and
+exits `0`.
 
 ## Configuration
 
