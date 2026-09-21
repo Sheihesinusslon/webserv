@@ -28,4 +28,8 @@
 # define MAX_SERVER_NAMES 64
 # define MAX_ALLOW_METHODS 8
 
+# define POLL_INTERVAL_MS 1000
+# define CLIENT_TIMEOUT_SEC 60
+# define RECV_CHUNK_SIZE 8192
+
 #endif
