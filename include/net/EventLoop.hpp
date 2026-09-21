@@ -36,6 +36,7 @@ private:
 
 	void	buildPollSet(std::vector<struct pollfd> &fds) const;
 	void	dispatch(const std::vector<struct pollfd> &fds);
+	void	handleEvent(const struct pollfd &event);
 	void	acceptFrom(const Socket &socket);
 	void	onReadable(Connection &connection);
 	void	onWritable(Connection &connection);

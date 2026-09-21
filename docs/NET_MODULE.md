@@ -120,6 +120,27 @@ does one `recv` or one `send`, then returns to the loop. Nothing ever waits on a
 
 ---
 
+## When something throws
+
+The only things that throw in the loop are allocations (`bad_alloc`): growing a buffer,
+building the poll set, creating a `Connection`. Three catches, narrow to wide:
+
+```
+  dispatch, per event      the client whose event failed is closed; the others carry on
+  run, per iteration       a failed buildPollSet is logged and the loop tries again
+  main, last resort        report and exit 1 — never abort(), never a core dump
+```
+
+`acceptFrom` also guards the gap between `accept()` and the map insert: if allocation
+fails there, the new fd is closed instead of leaked.
+
+Proven by `run_tests.sh`: the server under `ulimit -v 64M`, one client streaming 300 MB
+with no blank line → that client is dropped with `fd N: std::bad_alloc` logged, the
+server stays up and keeps answering. (Skipped under sanitizer builds, which cannot start
+under a memory cap.)
+
+---
+
 ## What is scaffolding
 
 ```cpp

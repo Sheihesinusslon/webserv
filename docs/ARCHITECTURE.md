@@ -8,13 +8,10 @@ the contracts between modules, and how each subject requirement maps to an owner
 | part | state |
 |---|---|
 | A - config & routing | **done** - parse, validate, inherit, matchServer, matchLocation, resolvePath |
-| B - transport & event loop | **walking skeleton done** - `Socket`, `Connection`, `EventLoop`: single `poll()`, accept, read, write, idle timeout, SIGINT/SIGTERM. Answers a hardcoded `200 OK`; the request-complete check is a placeholder for C |
+| B - transport & event loop | **skeleton done** - `Socket`, `Connection`, `EventLoop`; answers a hardcoded `200 OK` until C plugs in. See [NET_MODULE.md](NET_MODULE.md) |
 | C - http & handlers | not started - no `include/http/`, no `src/http/` |
 | CGI | not started |
 | `www/` content + Python test suite | not started |
-
-Still thin in A: nothing rejects two servers claiming the same `host:port` *and* the
-same `server_name`; roots and CGI interpreters are not checked to exist on disk.
 
 ---
 
@@ -36,7 +33,8 @@ This is also what makes a three-way split safe. Two of the three people can work
 build and test with no networking involved at all.
 
 A second grade-0 rule (§II): the program must never crash, even on out-of-memory.
-Every module owns its failure paths; the event loop carries a top-level catch-all.
+Every module owns its failure paths; the event loop catches per client, per iteration,
+and `main` as a last resort (see NET_MODULE.md, *When something throws*).
 
 ---
 
@@ -118,7 +116,8 @@ Owns every file descriptor in the process.
 | `Connection` state machine: read, dispatch, write, close | Config parsing |
 | Per-connection input and output buffers | |
 | Partial reads and partial writes | |
-| Client disconnects, idle timeouts, fd exhaustion, `SIGPIPE` | |
+| Client disconnects, idle timeouts, fd exhaustion | |
+| Signals: clean exit on `SIGINT`/`SIGTERM`, `SIGPIPE` ignored | |
 | Registering CGI pipe fds into the *same* poll set | Building the CGI process or env |
 
 - **Input:** the listener list from A.
@@ -198,9 +197,16 @@ Result              RequestHandler::handle(const HttpRequest&, const Config&);
 const std::string&  HttpResponse::buffer() const;       // B drains across poll writes
 ```
 
-`handle()` cannot always return a finished response: a CGI request must be able to
-return *"pending — here are the fds to poll"*. Decide that return type **before**
-writing B's state machine; retrofitting it later means rewriting the loop.
+For a static file, `handle()` can build the whole response and return it. For CGI it
+cannot: the script runs as a separate process and its output arrives later, through a
+pipe. Waiting for it inside `handle()` would block the server, which is forbidden. So
+`handle()` also needs a way to say *"not finished yet — add this pipe fd to poll(), and
+call me again when it is readable"*. That second answer changes what a `Connection` has to
+remember (it may be waiting on a pipe, not just its own socket), so agree on it before
+connecting C to the loop rather than after.
+
+Today the loop has no C to call: `EventLoop::onReadable` uses two placeholder lines in
+place of `feed()` and `handle()` (see NET_MODULE.md).
 
 ---
 
@@ -306,15 +312,16 @@ Decisions baked in:
 ```
 include/
   webserv.hpp                                            shared constants
-  config/   Config.hpp  ServerConfig.hpp  LocationConfig.hpp
-            Listener.hpp  ConfigParser.hpp  ConfigTokenizer.hpp     (A)   exists
+  config/   Config.hpp  ServerConfig.hpp  LocationConfig.hpp  Listener.hpp
+            ConfigParser.hpp  ConfigTokenizer.hpp  ConfigDump.hpp     (A)   exists
   net/      Socket.hpp  EventLoop.hpp  Connection.hpp                  (B)   exists
   http/     HttpRequest.hpp  HttpResponse.hpp
             RequestHandler.hpp  HttpStatus.hpp                      (C)   to write
   cgi/      Cgi.hpp                                                 (B+C) to write
   bonus/    bonus-only headers
 src/
-  config/  net/  http/  cgi/  main.cpp
+  config/  net/  main.cpp                                                  exists
+  http/  cgi/                                                              to write
 tests/
   configs/  valid/ and invalid/ fixtures
   unit/     config.cpp  matching.cpp  paths.cpp  loop.cpp - run by tests/run_tests.sh

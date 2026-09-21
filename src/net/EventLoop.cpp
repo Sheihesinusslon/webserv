@@ -2,7 +2,9 @@
 #include "webserv.hpp"
 
 #include <csignal>
+#include <exception>
 #include <fcntl.h>
+#include <iostream>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -91,8 +93,15 @@ int	EventLoop::run()
 {
 	while (!stopRequested())
 	{
-		if (!runOnce(POLL_INTERVAL_MS))
-			break ;
+		try
+		{
+			if (!runOnce(POLL_INTERVAL_MS))
+				break ;
+		}
+		catch (const std::exception &e)
+		{
+			std::cerr << WEBSERV_NAME << ": " << e.what() << std::endl;
+		}
 	}
 	closeAll();
 	return (0);
@@ -140,35 +149,50 @@ void	EventLoop::buildPollSet(std::vector<struct pollfd> &fds) const
 
 void	EventLoop::dispatch(const std::vector<struct pollfd> &fds)
 {
-	std::map<int, Connection *>::iterator	found;
-	const Socket							*socket;
-	std::size_t								i;
+	std::size_t	i;
 
 	for (i = 0; i < fds.size(); i++)
 	{
 		if (fds[i].revents == 0)
 			continue;
-		socket = listeningSocket(fds[i].fd);
-		if (socket != NULL)
+		try
 		{
-			if (fds[i].revents & POLLIN)
-				acceptFrom(*socket);
-			continue;
+			handleEvent(fds[i]);
 		}
-		found = _connections.find(fds[i].fd);
-		if (found == _connections.end())
-			continue;
-		if (fds[i].revents & (POLLERR | POLLHUP | POLLNVAL))
+		catch (const std::exception &e)
 		{
 			closeConnection(fds[i].fd);
-			continue;
+			std::cerr << WEBSERV_NAME << ": fd " << fds[i].fd << ": "
+				<< e.what() << std::endl;
 		}
-		if (fds[i].revents & POLLIN)
-			onReadable(*found->second);
-		found = _connections.find(fds[i].fd);
-		if (found != _connections.end() && (fds[i].revents & POLLOUT))
-			onWritable(*found->second);
 	}
+}
+
+void	EventLoop::handleEvent(const struct pollfd &event)
+{
+	std::map<int, Connection *>::iterator	found;
+	const Socket							*socket;
+
+	socket = listeningSocket(event.fd);
+	if (socket != NULL)
+	{
+		if (event.revents & POLLIN)
+			acceptFrom(*socket);
+		return ;
+	}
+	found = _connections.find(event.fd);
+	if (found == _connections.end())
+		return ;
+	if (event.revents & (POLLERR | POLLHUP | POLLNVAL))
+	{
+		closeConnection(event.fd);
+		return ;
+	}
+	if (event.revents & POLLIN)
+		onReadable(*found->second);
+	found = _connections.find(event.fd);
+	if (found != _connections.end() && (event.revents & POLLOUT))
+		onWritable(*found->second);
 }
 
 const Socket	*EventLoop::listeningSocket(int fd) const
@@ -185,7 +209,8 @@ const Socket	*EventLoop::listeningSocket(int fd) const
 
 void	EventLoop::acceptFrom(const Socket &socket)
 {
-	int	fd;
+	Connection	*connection;
+	int			fd;
 
 	fd = accept(socket.fd(), NULL, NULL);
 	if (fd < 0)
@@ -195,7 +220,19 @@ void	EventLoop::acceptFrom(const Socket &socket)
 		::close(fd);
 		return ;
 	}
-	_connections[fd] = new Connection(fd, socket.listener());
+	connection = NULL;
+	try
+	{
+		connection = new Connection(fd, socket.listener());
+		_connections[fd] = connection;
+	}
+	catch (const std::exception &)
+	{
+		if (connection == NULL)
+			::close(fd);
+		else
+			delete connection;
+	}
 }
 
 void	EventLoop::onReadable(Connection &connection)

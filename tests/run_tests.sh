@@ -137,6 +137,30 @@ kill -INT $SOCK_PID 2>/dev/null
 wait $SOCK_PID 2>/dev/null
 rm -f "$SOCK_OUT"
 
+echo "-- out of memory: drop the client, keep serving"
+if (ulimit -v 65536; $BIN -t tests/configs/valid/bind.conf) > /dev/null 2>&1; then
+	SOCK_OUT="$(mktemp /tmp/webserv_oom.XXXXXX)"
+	(ulimit -v 65536; exec $BIN tests/configs/valid/bind.conf) > "$SOCK_OUT" 2>&1 &
+	SOCK_PID=$!
+	sleep 0.3
+	head -c 300M /dev/zero | timeout 20 bash -c 'cat > /dev/tcp/127.0.0.1/8700' 2>/dev/null
+	sleep 0.3
+	if grep -q "bad_alloc" "$SOCK_OUT"; then ok "allocation failure is caught and logged"; else ko "allocation failure is caught and logged"; fi
+	if kill -0 $SOCK_PID 2>/dev/null; then ok "server survives it"; else ko "server survives it"; fi
+	REPLY=$(timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/8700; printf "GET / HTTP/1.1\r\n\r\n" >&3; cat <&3' 2>/dev/null)
+	case "$REPLY" in
+		"HTTP/1.1 200 OK"*) ok "still answers other clients" ;;
+		*) ko "still answers other clients" ;;
+	esac
+	kill -INT $SOCK_PID 2>/dev/null
+	wait $SOCK_PID 2>/dev/null
+	SOCK_RC=$?
+	if [ $SOCK_RC -eq 0 ]; then ok "still exits 0 on SIGINT"; else ko "still exits 0 on SIGINT (got $SOCK_RC)"; fi
+	rm -f "$SOCK_OUT"
+else
+	echo "SKIP the binary cannot start under ulimit -v (sanitizer build)"
+fi
+
 echo "-- unit tests against the config objects"
 UNIT_SRC="src/config/Config.cpp src/config/ConfigParser.cpp \
 	src/config/ConfigTokenizer.cpp src/config/Listener.cpp \

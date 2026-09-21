@@ -3,6 +3,8 @@
 #include "config/ConfigDump.hpp"
 #include "net/EventLoop.hpp"
 
+#include <exception>
+
 #ifdef BONUS
 # include "webserv_bonus.hpp"
 #endif
@@ -73,7 +75,7 @@ static int	runServer(const Config &config)
 	return (loop.run());
 }
 
-int	main(int argc, char **argv)
+static int	webserv(int argc, char **argv)
 {
 	std::string	configPath;
 	RunMode		mode;
@@ -89,4 +91,21 @@ int	main(int argc, char **argv)
 	if (mode != RunServer)
 		return (checkConfig(config, configPath, mode == DumpConfig));
 	return (runServer(config));
+}
+
+int	main(int argc, char **argv)
+{
+	try
+	{
+		return (webserv(argc, argv));
+	}
+	catch (const std::exception &e)
+	{
+		std::cerr << WEBSERV_NAME << ": fatal: " << e.what() << std::endl;
+	}
+	catch (...)
+	{
+		std::cerr << WEBSERV_NAME << ": fatal: unknown exception" << std::endl;
+	}
+	return (1);
 }
