@@ -138,7 +138,11 @@ wait $SOCK_PID 2>/dev/null
 rm -f "$SOCK_OUT"
 
 echo "-- out of memory: drop the client, keep serving"
-if (ulimit -v 65536; $BIN -t tests/configs/valid/bind.conf) > /dev/null 2>&1; then
+# Probe: can the binary start under a memory cap at all? A sanitizer build cannot
+# (ASan reserves shadow memory far beyond the cap). Its startup failure must not
+# be mistaken for a finding, so the probe runs with ASAN_OPTIONS cleared - otherwise
+# CI's log_path would capture it as a report.
+if (ulimit -v 65536; ASAN_OPTIONS= $BIN -t tests/configs/valid/bind.conf) > /dev/null 2>&1; then
 	SOCK_OUT="$(mktemp /tmp/webserv_oom.XXXXXX)"
 	(ulimit -v 65536; exec $BIN tests/configs/valid/bind.conf) > "$SOCK_OUT" 2>&1 &
 	SOCK_PID=$!
