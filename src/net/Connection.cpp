@@ -8,6 +8,7 @@ Connection::Connection(int fd, const Listener &listener)
 	  _in(""),
 	  _out(""),
 	  _close(false),
+	  _readClosed(false),
 	  _lastActivity(std::time(NULL))
 {
 }
@@ -41,6 +42,16 @@ std::string	&Connection::outBuffer()
 bool	Connection::wantsWrite() const
 {
 	return (!_out.empty());
+}
+
+void	Connection::stopReading()
+{
+	_readClosed = true;
+}
+
+bool	Connection::wantsRead() const
+{
+	return (!_readClosed);
 }
 
 void	Connection::markClose()

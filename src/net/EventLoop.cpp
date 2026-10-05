@@ -139,7 +139,9 @@ void	EventLoop::buildPollSet(std::vector<struct pollfd> &fds) const
 	for (it = _connections.begin(); it != _connections.end(); ++it)
 	{
 		entry.fd = it->first;
-		entry.events = POLLIN;
+		entry.events = 0;
+		if (it->second->wantsRead())
+			entry.events |= POLLIN;
 		if (it->second->wantsWrite())
 			entry.events |= POLLOUT;
 		entry.revents = 0;
@@ -241,6 +243,14 @@ void	EventLoop::onReadable(Connection &connection)
 	ssize_t	received;
 
 	received = recv(connection.fd(), chunk, sizeof(chunk), 0);
+	if (received == 0 && connection.wantsWrite())
+	{
+		// half-close: the client is done sending but still reading, so finish
+		// the response first; stop polling for input, it would fire forever
+		connection.stopReading();
+		connection.markClose();
+		return ;
+	}
 	if (received <= 0)
 	{
 		closeConnection(connection.fd());

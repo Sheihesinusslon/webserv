@@ -19,6 +19,9 @@ public:
 	std::string		&outBuffer();
 	bool			wantsWrite() const;
 
+	void			stopReading();
+	bool			wantsRead() const;
+
 	void			markClose();
 	bool			shouldClose() const;
 
@@ -34,6 +37,7 @@ private:
 	std::string	_in;
 	std::string	_out;
 	bool		_close;
+	bool		_readClosed;
 	std::time_t	_lastActivity;
 };
 

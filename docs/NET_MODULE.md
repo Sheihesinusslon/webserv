@@ -60,7 +60,8 @@ listener and the reason, main exits 1. Sockets already opened are released.
   |
   |  1. buildPollSet
   |       listeners     -> POLLIN
-  |       connections   -> POLLIN, and POLLOUT only if _out is not empty
+  |       connections   -> POLLIN unless the client half-closed,
+  |                        and POLLOUT only if _out is not empty
   |
   |  2. poll(fds, count, timeout)           <-- the single poll() in the program
   |
@@ -69,6 +70,8 @@ listener and the reason, main exits 1. Sockets already opened are released.
   |       connection error    -> close it
   |       connection readable -> recv() once into _in
   |                              request complete?  -> fill _out, mark close
+  |                              0 bytes, _out pending? -> half-close: stop
+  |                                 reading, mark close, finish sending
   |       connection writable -> send() once from _out, erase what went out
   |                              _out empty and marked close? -> close it
   |
@@ -88,7 +91,8 @@ does one `recv` or one `send`, then returns to the loop. Nothing ever waits on a
 ```
   poll() is called in exactly one place            grep "poll(" src/  -> 1 hit
   recv/send/accept exist only in net/               nothing else touches a socket
-  errno is never read after recv or send            <= 0 means "close", full stop
+  errno is never read after recv or send            <= 0 means "close" (0 with a
+                                                    pending response: send it first)
   POLLOUT is requested only when there is output    otherwise poll() returns instantly forever
   every fd is O_NONBLOCK                            fcntl(fd, F_SETFL, O_NONBLOCK), the only form allowed
   poll() has a timeout (1 s)                        so idle connections get swept even when nothing happens

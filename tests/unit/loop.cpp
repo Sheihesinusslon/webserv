@@ -139,6 +139,25 @@ static void	testRequestResponse(const Config &config)
 	close(client);
 }
 
+static void	testHalfClose(const Config &config)
+{
+	EventLoop	loop(config);
+	std::string	reply;
+	int			client;
+
+	std::cout << "-- client half-closes after the request" << std::endl;
+	loop.open();
+	client = connectTo(8800);
+	spin(loop, 2);
+	sendAll(client, "GET / HTTP/1.0\r\n\r\n");
+	shutdown(client, SHUT_WR);
+	spin(loop, 4);
+	reply = readAll(client);
+	check("response still delivered", reply.find("HTTP/1.1 200 OK") == 0);
+	checkCount("closed once the response is sent", loop.connectionCount(), 0);
+	close(client);
+}
+
 static void	testPartialRequest(const Config &config)
 {
 	EventLoop	loop(config);
@@ -236,6 +255,7 @@ int	main(void)
 	testOpen(config);
 	testAcceptAndClose(config);
 	testRequestResponse(config);
+	testHalfClose(config);
 	testPartialRequest(config);
 	testManyClients(config);
 	testIdleTimeout(config);
