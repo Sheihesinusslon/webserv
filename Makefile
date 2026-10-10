@@ -14,15 +14,22 @@ INC_DIR_BONUS   = include/bonus
 
 SRC_CONFIG = \
 	config/Config.cpp \
+	config/ConfigDump.cpp \
 	config/ConfigParser.cpp \
 	config/ConfigTokenizer.cpp \
 	config/Listener.cpp \
 	config/LocationConfig.cpp \
 	config/ServerConfig.cpp
 
+SRC_NET = \
+	net/Connection.cpp \
+	net/EventLoop.cpp \
+	net/Socket.cpp
+
 SRC = \
 	main.cpp \
-	$(SRC_CONFIG)
+	$(SRC_CONFIG) \
+	$(SRC_NET)
 
 SRC_BONUS = \
 	bonus/bonus.cpp

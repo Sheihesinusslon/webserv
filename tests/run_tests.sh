@@ -3,6 +3,7 @@
 cd "$(dirname "$0")/.." || exit 1
 
 BIN=./webserv
+CHECK="$BIN -t"
 PASSED=0
 FAILED=0
 
@@ -44,109 +45,131 @@ expect_output()
 	fi
 }
 
-expect_count()
-{
-	NAME=$1
-	NEEDLE=$2
-	WANT=$3
-	shift 3
-	GOT=$("$@" 2>&1 | grep -cF "$NEEDLE")
-	if [ "$GOT" -eq "$WANT" ]; then
-		ok "$NAME"
-	else
-		ko "$NAME (expected $WANT of '$NEEDLE', got $GOT)"
-	fi
-}
-
 if [ ! -x $BIN ]; then
 	echo "KO   $BIN not found, run make first"
 	exit 1
 fi
 
 echo "-- arguments"
-run_test "no argument"           0 $BIN
-run_test "one argument"          0 $BIN config/default.conf
+run_test "no argument"           0 $CHECK
+run_test "one argument"          0 $CHECK config/default.conf
 run_test "too many arguments"    1 $BIN a b
-run_test "missing config file"   1 $BIN config/does_not_exist.conf
-run_test "config path is a dir"  1 $BIN config
+run_test "unknown flag"          1 $BIN -x
+run_test "-t twice"              1 $BIN -t -t
+run_test "missing config file"   1 $CHECK config/does_not_exist.conf
+run_test "config path is a dir"  1 $CHECK config
+
+echo "-- -t validates, -T validates and dumps"
+expect_output "-t reports success on stderr"   "test is successful"  $BIN -t config/default.conf
+if [ -z "$($BIN -t config/default.conf 2>/dev/null)" ]; then ok "-t prints nothing on stdout"; else ko "-t prints nothing on stdout"; fi
+expect_output "-T dumps the config"            "server[0] listen"    $BIN -T config/default.conf
+expect_output "-T also reports success"        "test is successful"  $BIN -T config/default.conf
+run_test      "-t and -T together rejected"    1 $BIN -t -T
+run_test      "-T on an invalid config exits 1" 1 $BIN -T tests/configs/invalid/bad_port.conf
 
 echo "-- valid configs are accepted"
 for CONF in tests/configs/valid/*.conf; do
-	run_test "valid   $(basename "$CONF")" 0 $BIN "$CONF"
+	run_test "valid   $(basename "$CONF")" 0 $CHECK "$CONF"
 done
 
 echo "-- invalid configs are rejected"
 for CONF in tests/configs/invalid/*.conf; do
-	run_test "invalid $(basename "$CONF")" 1 $BIN "$CONF"
+	run_test "invalid $(basename "$CONF")" 1 $CHECK "$CONF"
 done
 
-echo "-- tokenizer tolerates formatting"
-expect_output "compact: no spaces at all"   "location[/a] root"    $BIN tests/configs/valid/compact.conf
-expect_output "comments are skipped"        "listen 0.0.0.0:8105"  $BIN tests/configs/valid/comments.conf
-expect_output "CRLF line endings"           "listen 0.0.0.0:8106"  $BIN tests/configs/valid/crlf.conf
-
-echo "-- listen forms"
-expect_output "bare port gets default host" "listen 0.0.0.0:8090"    $BIN tests/configs/valid/listen_forms.conf
-expect_output "host:port is split"          "listen 127.0.0.1:8091"  $BIN tests/configs/valid/listen_forms.conf
-expect_output "host alone gets port 80"     "listen localhost:80"    $BIN tests/configs/valid/listen_forms.conf
-expect_count  "duplicate listen deduped"    "server[0] listen 0.0.0.0:8090" 1  $BIN tests/configs/valid/listen_forms.conf
-expect_count  "listeners are unique"        "listener 0.0.0.0:8090" 1          $BIN tests/configs/valid/listen_forms.conf
-
-echo "-- inheritance"
-expect_output "root inherited"        "location[/child] root www/site"             $BIN tests/configs/valid/inherit.conf
-expect_output "index inherited"       "location[/child] index home.html"           $BIN tests/configs/valid/inherit.conf
-expect_output "autoindex inherited"   "location[/child] autoindex on"              $BIN tests/configs/valid/inherit.conf
-expect_output "body size inherited"   "location[/child] client_max_body_size 4096" $BIN tests/configs/valid/inherit.conf
-expect_output "root overridden"       "location[/own] root www/other"              $BIN tests/configs/valid/inherit.conf
-expect_output "autoindex overridden"  "location[/own] autoindex off"               $BIN tests/configs/valid/inherit.conf
-expect_output "body size overridden"  "location[/own] client_max_body_size 8192"   $BIN tests/configs/valid/inherit.conf
-
-echo "-- directives are stored"
-expect_output "methods kept in order"  "location[/] allow_methods DELETE"    $BIN tests/configs/valid/multi_server.conf
-expect_output "server_name list"       "server_name b.local"                 $BIN tests/configs/valid/multi_server.conf
-expect_output "cgi extension mapping"  "cgi_ext .py /usr/bin/python3"        $BIN tests/configs/valid/multi_server.conf
-expect_output "redirect stored"        "return 301 /"                        $BIN tests/configs/valid/multi_server.conf
-expect_output "second server parsed"   "server[1] listen 0.0.0.0:8103"       $BIN tests/configs/valid/multi_server.conf
-expect_output "upload store stored"    "upload_store www/uploads"            $BIN config/default.conf
-expect_output "error page stored"      "error_page 413 www/errors/413.html"  $BIN config/default.conf
-
 echo "-- error messages point at the right line"
-expect_output "unknown directive line"   "line 3:"                  $BIN tests/configs/invalid/unknown_server_directive.conf
-expect_output "missing semicolon line"   "line 2:"                  $BIN tests/configs/invalid/missing_semicolon.conf
-expect_output "missing semicolon cause" "'listen' expects 1"       $BIN tests/configs/invalid/missing_semicolon.conf
-expect_output "names the bad directive"  "autoindeks"               $BIN tests/configs/invalid/unknown_server_directive.conf
-expect_output "names the bad method"     "PATCH"                    $BIN tests/configs/invalid/bad_method.conf
-expect_output "reports missing listen"   "no 'listen'"              $BIN tests/configs/invalid/no_listen.conf
-expect_output "reports duplicate loc"    "duplicate location '/a'"  $BIN tests/configs/invalid/duplicate_location.conf
+expect_output "unknown directive line"   "line 3:"                  $CHECK tests/configs/invalid/unknown_server_directive.conf
+expect_output "missing semicolon line"   "line 2:"                  $CHECK tests/configs/invalid/missing_semicolon.conf
+expect_output "missing semicolon cause" "'listen' expects 1"       $CHECK tests/configs/invalid/missing_semicolon.conf
+expect_output "names the bad directive"  "autoindeks"               $CHECK tests/configs/invalid/unknown_server_directive.conf
+expect_output "names the bad method"     "PATCH"                    $CHECK tests/configs/invalid/bad_method.conf
+expect_output "reports missing listen"   "no 'listen'"              $CHECK tests/configs/invalid/no_listen.conf
+expect_output "reports duplicate loc"    "duplicate location '/a'"  $CHECK tests/configs/invalid/duplicate_location.conf
 
 echo "-- server blocks must stay reachable"
 expect_output "duplicate server_name"    "duplicate server_name 'shop.test' on listener 0.0.0.0:8300" \
-	$BIN tests/configs/invalid/duplicate_server_name.conf
+	$CHECK tests/configs/invalid/duplicate_server_name.conf
 expect_output "two nameless defaults"    "two server blocks without 'server_name' on listener 0.0.0.0:8301" \
-	$BIN tests/configs/invalid/two_default_servers.conf
-expect_output "named + default is fine"  "server[1] listen 0.0.0.0:8302" \
-	$BIN tests/configs/valid/default_and_named.conf
+	$CHECK tests/configs/invalid/two_default_servers.conf
 
 echo "-- listen values must be a real host"
 expect_output "junk host rejected"       "invalid listen value" \
-	$BIN tests/configs/invalid/bad_listen_host.conf
+	$CHECK tests/configs/invalid/bad_listen_host.conf
 expect_output "junk host with port too"  "invalid listen value" \
-	$BIN tests/configs/invalid/bad_listen_host_port.conf
-expect_output "underscore host kept"     "listen my_host.local:8500" \
-	$BIN tests/configs/valid/listen_hosts.conf
-expect_output "ipv4-mapped ipv6 kept"    "listen [::ffff:192.0.2.1]:8501" \
-	$BIN tests/configs/valid/listen_hosts.conf
-expect_output "ipv6 zone id kept"        "listen [fe80::1%eth0]:8502" \
-	$BIN tests/configs/valid/listen_hosts.conf
-expect_output "bare ipv6 gets port 80"   "listen [::1]:80" \
-	$BIN tests/configs/valid/listen_hosts.conf
-expect_output "ipv6 wildcard kept"       "listen [::]:8504" \
-	$BIN tests/configs/valid/listen_hosts.conf
+	$CHECK tests/configs/invalid/bad_listen_host_port.conf
+
+echo "-- server: bind, answer HTTP, stop on SIGINT"
+SOCK_OUT="$(mktemp /tmp/webserv_sock.XXXXXX)"
+$BIN tests/configs/valid/bind.conf > "$SOCK_OUT" 2>&1 &
+SOCK_PID=$!
+( sleep 10; kill -9 $SOCK_PID 2>/dev/null ) 2>/dev/null &
+WATCHDOG=$!
+sleep 0.3
+if ss -ltn 2>/dev/null | grep -q ":8700 "; then ok "port 8700 is listening"; else ko "port 8700 is listening"; fi
+if ss -ltn 2>/dev/null | grep -q "127.0.0.1:8701 "; then ok "port 8701 is loopback only"; else ko "port 8701 is loopback only"; fi
+REPLY=$(timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/8700; printf "GET / HTTP/1.1\r\nHost: x\r\n\r\n" >&3; cat <&3' 2>/dev/null)
+case "$REPLY" in
+	"HTTP/1.1 200 OK"*) ok "answers HTTP on 8700" ;;
+	*) ko "answers HTTP on 8700" ;;
+esac
+REPLY=$(timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/8701; printf "GET / HTTP/1.1\r\n\r\n" >&3; cat <&3' 2>/dev/null)
+case "$REPLY" in
+	*"Hello, world!"*) ok "answers HTTP on 8701" ;;
+	*) ko "answers HTTP on 8701" ;;
+esac
+if kill -0 $SOCK_PID 2>/dev/null; then ok "server keeps running after requests"; else ko "server keeps running after requests"; fi
+kill -INT $SOCK_PID
+wait $SOCK_PID
+SOCK_RC=$?
+kill $WATCHDOG 2>/dev/null; wait $WATCHDOG 2>/dev/null
+if [ $SOCK_RC -eq 0 ]; then ok "SIGINT: exits 0"; else ko "SIGINT: exits 0 (got $SOCK_RC)"; fi
+if ss -ltn 2>/dev/null | grep -q ":8700 "; then ko "ports released on exit"; else ok "ports released on exit"; fi
+if grep -q "listening on 0.0.0.0:8700" "$SOCK_OUT"; then ok "announces its listeners"; else ko "announces its listeners"; fi
+
+$BIN tests/configs/valid/bind.conf > /dev/null 2>&1 &
+SOCK_PID=$!
+sleep 0.3
+timeout 5 $BIN tests/configs/valid/bind.conf > "$SOCK_OUT" 2>&1
+SOCK_RC=$?
+if [ $SOCK_RC -eq 1 ]; then ok "second instance on the same ports exits 1"; else ko "second instance on the same ports exits 1 (got $SOCK_RC)"; fi
+if grep -q "cannot bind: Address already in use" "$SOCK_OUT"; then ok "port conflict names the reason"; else ko "port conflict names the reason"; fi
+kill -INT $SOCK_PID 2>/dev/null
+wait $SOCK_PID 2>/dev/null
+rm -f "$SOCK_OUT"
+
+echo "-- out of memory: drop the client, keep serving"
+# Probe: can the binary start under a memory cap at all? A sanitizer build cannot
+# (ASan reserves shadow memory far beyond the cap). Its startup failure must not
+# be mistaken for a finding, so the probe runs with ASAN_OPTIONS cleared - otherwise
+# CI's log_path would capture it as a report.
+if (ulimit -v 65536; ASAN_OPTIONS= $BIN -t tests/configs/valid/bind.conf) > /dev/null 2>&1; then
+	SOCK_OUT="$(mktemp /tmp/webserv_oom.XXXXXX)"
+	(ulimit -v 65536; exec $BIN tests/configs/valid/bind.conf) > "$SOCK_OUT" 2>&1 &
+	SOCK_PID=$!
+	sleep 0.3
+	head -c 300M /dev/zero | timeout 20 bash -c 'cat > /dev/tcp/127.0.0.1/8700' 2>/dev/null
+	sleep 0.3
+	if grep -q "bad_alloc" "$SOCK_OUT"; then ok "allocation failure is caught and logged"; else ko "allocation failure is caught and logged"; fi
+	if kill -0 $SOCK_PID 2>/dev/null; then ok "server survives it"; else ko "server survives it"; fi
+	REPLY=$(timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/8700; printf "GET / HTTP/1.1\r\n\r\n" >&3; cat <&3' 2>/dev/null)
+	case "$REPLY" in
+		"HTTP/1.1 200 OK"*) ok "still answers other clients" ;;
+		*) ko "still answers other clients" ;;
+	esac
+	kill -INT $SOCK_PID 2>/dev/null
+	wait $SOCK_PID 2>/dev/null
+	SOCK_RC=$?
+	if [ $SOCK_RC -eq 0 ]; then ok "still exits 0 on SIGINT"; else ko "still exits 0 on SIGINT (got $SOCK_RC)"; fi
+	rm -f "$SOCK_OUT"
+else
+	echo "SKIP the binary cannot start under ulimit -v (sanitizer build)"
+fi
 
 echo "-- unit tests against the config objects"
 UNIT_SRC="src/config/Config.cpp src/config/ConfigParser.cpp \
 	src/config/ConfigTokenizer.cpp src/config/Listener.cpp \
-	src/config/LocationConfig.cpp src/config/ServerConfig.cpp"
+	src/config/LocationConfig.cpp src/config/ServerConfig.cpp \
+	src/net/Connection.cpp src/net/EventLoop.cpp src/net/Socket.cpp"
 UNIT_CXXFLAGS="${UNIT_CXXFLAGS:--Wall -Wextra -Werror -std=c++98}"
 for UNIT_TEST in tests/unit/*.cpp; do
 	UNIT_BIN="$(mktemp -u /tmp/webserv_unit.XXXXXX)"

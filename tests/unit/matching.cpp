@@ -73,9 +73,9 @@ static void	testVirtualHosting(const Config &config)
 		matchedRoot(config, DEFAULT_HOST, 8081, "second.test"), "www/second");
 	checkEqual("alias name picks second server",
 		matchedRoot(config, DEFAULT_HOST, 8081, "alias.test"), "www/second");
-	checkEqual("unknown host falls back to first declared",
+	checkEqual("unknown host, no nameless block: first declared wins",
 		matchedRoot(config, DEFAULT_HOST, 8081, "nonsense.test"), "www/site");
-	checkEqual("empty host falls back to first declared",
+	checkEqual("empty host, no nameless block: first declared wins",
 		matchedRoot(config, DEFAULT_HOST, 8081, ""), "www/site");
 
 	std::cout << "-- matchServer: host header forms" << std::endl;

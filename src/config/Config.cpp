@@ -208,20 +208,26 @@ void	Config::collectListeners()
 const ServerConfig	*Config::matchServer(const Listener &listener,
 						const std::string &hostHeader) const
 {
-	const ServerConfig	*fallback;
+	const ServerConfig	*firstDeclared;
+	const ServerConfig	*nameless;
 	std::string			host;
 	std::size_t			i;
 
 	host = toLower(stripPort(hostHeader));
-	fallback = NULL;
+	firstDeclared = NULL;
+	nameless = NULL;
 	for (i = 0; i < _servers.size(); i++)
 	{
 		if (!_servers[i].listensOn(listener))
 			continue;
-		if (fallback == NULL)
-			fallback = &_servers[i];
 		if (_servers[i].hasServerName(host))
 			return (&_servers[i]);
+		if (firstDeclared == NULL)
+			firstDeclared = &_servers[i];
+		if (nameless == NULL && _servers[i].serverNames.empty())
+			nameless = &_servers[i];
 	}
-	return (fallback);
+	if (nameless != NULL)
+		return (nameless);
+	return (firstDeclared);
 }
