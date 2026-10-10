@@ -93,12 +93,11 @@ bracketed `IP-literal`: `[::1]`, the IPv4-mapped `[::ffff:192.0.2.1]`, or a zone
 `[fe80::1%eth0]` (RFC 6874). Sub-delims that RFC 3986 permits in a `reg-name` (`$`,
 `!`, …) are rejected: a `listen` host must be resolvable, not merely URI-legal.
 
-At load, `resolveListens()` replaces each host with its numeric address (`getaddrinfo`,
-IPv4 first for names; IPv6 written RFC 5952 style by hand, as `inet_ntop` is not
-allowed): `localhost` -> `127.0.0.1`, `[0::1]` -> `[::1]`. An unresolvable host fails
-`-t` exactly as it would fail a run.
+At load, `resolveListens()` replaces each host with its numeric address: `localhost` -> `127.0.0.1`, `[0::1]` -> `[::1]`. A host that does not resolve
+(`listen my_host.local:8500;` with no DNS or `/etc/hosts` entry) is now rejected by a test run `-t`
+with `host not found`.
 
-### Wildcard and specific address on one port (issue #27)
+### Wildcard and specific address on one port
 
 ```
   listen 8090;             -> 0.0.0.0:8090    socket
@@ -117,7 +116,7 @@ routing, see `matchServer` step 1.
 
 ```
   1. keep only servers that listen on the connection's local host:port
-     none? -> keep the servers on the wildcard of that port instead
+     if none -> keep the servers on the wildcard of that port instead
   2. of those, the first whose server_name equals the Host header
   3. no name match -> the one WITHOUT a server_name on that listener (the default)
   4. no nameless one either -> the FIRST declared for that listener
