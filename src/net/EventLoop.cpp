@@ -209,6 +209,15 @@ const Socket	*EventLoop::listeningSocket(int fd) const
 	return (NULL);
 }
 
+static Listener	localAddress(int fd, const Listener &fallback)
+{
+	Listener	local;
+
+	if (!Listener::fromSocket(fd, local))
+		return (fallback);
+	return (local);
+}
+
 void	EventLoop::acceptFrom(const Socket &socket)
 {
 	Connection	*connection;
@@ -225,7 +234,7 @@ void	EventLoop::acceptFrom(const Socket &socket)
 	connection = NULL;
 	try
 	{
-		connection = new Connection(fd, socket.listener());
+		connection = new Connection(fd, localAddress(fd, socket.listener()));
 		_connections[fd] = connection;
 	}
 	catch (const std::exception &)

@@ -167,7 +167,7 @@ Declared in `include/config/`. See `Config.hpp`, `ServerConfig.hpp`,
 ```cpp
 bool                   Config::load(const std::string &path);
 const std::vector<Listener>    &Config::listeners() const;
-const ServerConfig     *Config::matchServer(const Listener &listener,
+const ServerConfig     *Config::matchServer(const Listener &local,
                                             const std::string &hostHeader) const;
 
 const LocationConfig   *ServerConfig::matchLocation(const std::string &path) const;
@@ -187,7 +187,8 @@ config can never take the process down.
 
 A listener maps to a **list** of candidate server blocks, not one: several `server`
 blocks may share a `host:port`. B binds the keys; C resolves the value list per request
-once the `Host` header is parsed.
+once the `Host` header is parsed. `local` is `Connection::local()`, the address the
+client actually reached (`getsockname`), not the socket's config address.
 
 ### B to C
 
@@ -237,7 +238,8 @@ Both are **code**, not config; nginx works the same way. The config only supplie
 
 ### Which server block
 
-1. Narrow to blocks listening on the connection's `host:port`.
+1. Narrow to blocks listening on the connection's local `host:port`; if none, to the
+   blocks on the wildcard (`0.0.0.0` / `[::]`) of that port, as in nginx.
 2. Exact `server_name` match against the request's `Host` header.
 3. No match: the block **without a `server_name`** on that `host:port` is the default.
 4. No nameless block either: the **first block declared** for that `host:port`.

@@ -18,15 +18,17 @@ public:
 	const std::vector<Listener>		&listeners() const;
 	const std::string				&error() const;
 
-	const ServerConfig	*matchServer(const Listener &listener,
+	const ServerConfig	*matchServer(const Listener &local,
 							const std::string &hostHeader) const;
 
 private:
+	bool	resolveListens(const std::string &path);
 	bool	validate(const std::string &path);
 	bool	checkServerCollisions(const std::string &path);
 	void	normalizeNames();
 	void	inherit();
 	void	collectListeners();
+	bool	hasServerOn(const Listener &listener) const;
 
 	std::vector<ServerConfig>	_servers;
 	std::vector<Listener>		_listeners;

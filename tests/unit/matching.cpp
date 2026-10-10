@@ -22,6 +22,21 @@ static void	check(const std::string &name, bool condition)
 	}
 }
 
+static void	checkEqual(const std::string &name, std::size_t got, std::size_t want)
+{
+	if (got == want)
+	{
+		std::cout << "OK   " << name << std::endl;
+		g_passed++;
+	}
+	else
+	{
+		std::cout << "KO   " << name << " (want " << want << ", got " << got
+			<< ")" << std::endl;
+		g_failed++;
+	}
+}
+
 static void	checkEqual(const std::string &name, const std::string &got,
 				const std::string &want)
 {
@@ -101,8 +116,8 @@ static void	testVirtualHosting(const Config &config)
 		matchedRoot(config, DEFAULT_HOST, 8082, "webserv.test"), "www/second");
 	checkEqual("unknown listener matches nothing",
 		matchedRoot(config, DEFAULT_HOST, 9999, "webserv.test"), "<null>");
-	checkEqual("right port, wrong interface matches nothing",
-		matchedRoot(config, "127.0.0.1", 8081, "webserv.test"), "<null>");
+	checkEqual("specific address on a wildcard port reaches the wildcard servers",
+		matchedRoot(config, "127.0.0.1", 8081, "second.test"), "www/second");
 
 	std::cout << "-- listeners" << std::endl;
 	check("three unique listeners", config.listeners().size() == 3);
@@ -114,6 +129,46 @@ static void	testVirtualHosting(const Config &config)
 		!config.servers()[0].listensOn(Listener(DEFAULT_HOST, 8082)));
 	checkEqual("listener key format",
 		Listener("127.0.0.1", 8080).key(), "127.0.0.1:8080");
+}
+
+static void	testOverlap(const Config &config)
+{
+	std::cout << "-- overlap: wildcard and specific address on one port"
+		<< std::endl;
+	checkEqual("only the wildcard gets a socket, plus the separate port",
+		config.listeners().size(), 2);
+	check("wildcard socket kept",
+		config.listeners()[0] == Listener(DEFAULT_HOST, 8710));
+	check("specific address on its own port keeps its socket",
+		config.listeners()[1] == Listener("127.0.0.1", 8711));
+	checkEqual("loopback, its own name: specific server",
+		matchedRoot(config, "127.0.0.1", 8710, "b.test"), "www/b");
+	checkEqual("loopback, the other server's name: still the specific server",
+		matchedRoot(config, "127.0.0.1", 8710, "a.test"), "www/b");
+	checkEqual("other address, wildcard server's name: wildcard server",
+		matchedRoot(config, "192.168.1.10", 8710, "a.test"), "www/a");
+	checkEqual("other address, specific server's name: wildcard server",
+		matchedRoot(config, "192.168.1.10", 8710, "b.test"), "www/a");
+	checkEqual("another loopback address is not 127.0.0.1",
+		matchedRoot(config, "127.0.0.2", 8710, "b.test"), "www/a");
+	checkEqual("no wildcard on the port: wrong interface matches nothing",
+		matchedRoot(config, "192.168.1.10", 8711, ""), "<null>");
+	checkEqual("localhost and 127.0.0.1 are one listen",
+		config.servers()[2].listens.size(), 1);
+	checkEqual("ipv4 wildcard does not cover ipv6",
+		matchedRoot(config, "[::1]", 8710, "a.test"), "<null>");
+}
+
+static void	testOverlapIpv6(const Config &config)
+{
+	std::cout << "-- overlap: ipv6" << std::endl;
+	checkEqual("one socket per family", config.listeners().size(), 2);
+	checkEqual("[::1] reaches its specific server",
+		matchedRoot(config, "[::1]", 8720, ""), "www/b6");
+	checkEqual("other ipv6 address reaches the [::] server",
+		matchedRoot(config, "[2001:db8::1]", 8720, ""), "www/a6");
+	checkEqual("ipv4 address reaches the 0.0.0.0 server",
+		matchedRoot(config, "127.0.0.1", 8720, ""), "www/a4");
 }
 
 static void	testLocationMatching(const Config &config)
@@ -186,6 +241,8 @@ int	main(void)
 {
 	Config	vhost;
 	Config	routing;
+	Config	overlap;
+	Config	overlapIpv6;
 
 	if (!vhost.load("tests/configs/valid/vhost.conf"))
 	{
@@ -197,7 +254,21 @@ int	main(void)
 		std::cout << "KO   load routing.conf: " << routing.error() << std::endl;
 		return (1);
 	}
+	if (!overlap.load("tests/configs/valid/listen_overlap.conf"))
+	{
+		std::cout << "KO   load listen_overlap.conf: " << overlap.error()
+			<< std::endl;
+		return (1);
+	}
+	if (!overlapIpv6.load("tests/configs/valid/listen_overlap_ipv6.conf"))
+	{
+		std::cout << "KO   load listen_overlap_ipv6.conf: "
+			<< overlapIpv6.error() << std::endl;
+		return (1);
+	}
 	testVirtualHosting(vhost);
+	testOverlap(overlap);
+	testOverlapIpv6(overlapIpv6);
 	testLocationMatching(routing);
 	testLocationRules(routing);
 	std::cout << "unit passed: " << g_passed << "   failed: " << g_failed

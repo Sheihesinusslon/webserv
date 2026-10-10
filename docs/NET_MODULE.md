@@ -17,11 +17,12 @@ Companion to [CONFIG_MODULE.md](CONFIG_MODULE.md); module boundaries are in
 ```
   EventLoop
   |
-  +-- _sockets      : vector<Socket*>          one per Config::listeners()
+  +-- _sockets      : vector<Socket*>          one per Config::listeners() (wildcard-collapsed)
   |                                             127.0.0.1:8080  0.0.0.0:8081  0.0.0.0:8082
   |
   +-- _connections  : map<fd, Connection*>     grows on accept(), shrinks on close
                          |
+                         +-- _local: Listener  address the client reached (getsockname)
                          +-- _in   : string    bytes received, not yet a full request
                          +-- _out  : string    bytes to send, not yet sent
                          +-- _close: bool      close once _out is drained
@@ -66,7 +67,8 @@ listener and the reason, main exits 1. Sockets already opened are released.
   |  2. poll(fds, count, timeout)           <-- the single poll() in the program
   |
   |  3. dispatch, for every fd that poll marked ready
-  |       listener readable   -> accept()  -> new Connection, set O_NONBLOCK
+  |       listener readable   -> accept()  -> new Connection, set O_NONBLOCK,
+  |                              getsockname() -> Connection::local() for matchServer
   |       connection error    -> close it
   |       connection readable -> recv() once into _in
   |                              request complete?  -> fill _out, mark close

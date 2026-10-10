@@ -27,8 +27,8 @@ How `config/default.conf` becomes a `Config` object tree.
           |
           v
   +-------------------+
-  | Config            |  validate() -> normalizeNames()
-  |                   |  -> inherit() -> collectListeners()
+  | Config            |  normalizeNames() -> resolveListens()
+  |                   |  -> validate() -> inherit() -> collectListeners()
   +-------------------+
           |
           v
@@ -52,7 +52,7 @@ Only `Config` survives.
   |        +-- listens    : vector<Listener>     1..n
   |        +-- locations  : vector<LocationConfig>  0..n
   |
-  +-- _listeners : vector<Listener>              all listens, flattened + deduped, unique
+  +-- _listeners : vector<Listener>              sockets to open: unique, wildcard-collapsed
 ```
 
 `default.conf` produces:
@@ -93,6 +93,22 @@ bracketed `IP-literal`: `[::1]`, the IPv4-mapped `[::ffff:192.0.2.1]`, or a zone
 `[fe80::1%eth0]` (RFC 6874). Sub-delims that RFC 3986 permits in a `reg-name` (`$`,
 `!`, …) are rejected: a `listen` host must be resolvable, not merely URI-legal.
 
+At load, `resolveListens()` replaces each host with its numeric address (`getaddrinfo`,
+IPv4 first for names; IPv6 written RFC 5952 style by hand, as `inet_ntop` is not
+allowed): `localhost` -> `127.0.0.1`, `[0::1]` -> `[::1]`. An unresolvable host fails
+`-t` exactly as it would fail a run.
+
+### Wildcard and specific address on one port (issue #27)
+
+```
+  listen 8090;             -> 0.0.0.0:8090    socket
+  listen 127.0.0.1:8090;   -> 127.0.0.1:8090  no socket: covered by the wildcard
+```
+
+Linux refuses to bind both, so `collectListeners()` opens only the wildcard of each port
+and family (`0.0.0.0` and `[::]` are separate). The specific `listen` still decides
+routing, see `matchServer` step 1.
+
 ---
 
 ## Matching rules
@@ -100,7 +116,8 @@ bracketed `IP-literal`: `[::1]`, the IPv4-mapped `[::ffff:192.0.2.1]`, or a zone
 ### Which server — `matchServer(listener, hostHeader)`
 
 ```
-  1. keep only servers that listen on this host:port
+  1. keep only servers that listen on the connection's local host:port
+     none? -> keep the servers on the wildcard of that port instead
   2. of those, the first whose server_name equals the Host header
   3. no name match -> the one WITHOUT a server_name on that listener (the default)
   4. no nameless one either -> the FIRST declared for that listener
