@@ -2,9 +2,9 @@
 
 #include <unistd.h>
 
-Connection::Connection(int fd, const Listener &listener)
+Connection::Connection(int fd, const Listener &local)
 	: _fd(fd),
-	  _listener(listener),
+	  _local(local),
 	  _in(""),
 	  _out(""),
 	  _close(false),
@@ -24,9 +24,9 @@ int	Connection::fd() const
 	return (_fd);
 }
 
-const Listener	&Connection::listener() const
+const Listener	&Connection::local() const
 {
-	return (_listener);
+	return (_local);
 }
 
 std::string	&Connection::inBuffer()

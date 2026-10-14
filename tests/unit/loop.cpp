@@ -243,6 +243,31 @@ static void	testStop(const Config &config)
 	checkCount("run() released the sockets", loop.listenerCount(), 0);
 }
 
+static void	testOverlap(void)
+{
+	Config		config;
+	std::string	reply;
+	int			client;
+
+	std::cout << "-- wildcard and specific address on one port" << std::endl;
+	if (!config.load("tests/configs/valid/listen_overlap.conf"))
+	{
+		check("load listen_overlap.conf", false);
+		return ;
+	}
+	EventLoop	loop(config);
+	check("open() succeeds", loop.open());
+	checkCount("one socket for the shared port, one for the other",
+		loop.listenerCount(), 2);
+	client = connectTo(8710);
+	check("loopback client reaches the wildcard socket", client >= 0);
+	sendAll(client, "GET / HTTP/1.1\r\nHost: b.test\r\n\r\n");
+	spin(loop, 4);
+	reply = readAll(client);
+	check("and is answered", reply.find("HTTP/1.1 200 OK") == 0);
+	close(client);
+}
+
 int	main(void)
 {
 	Config	config;
@@ -260,6 +285,7 @@ int	main(void)
 	testManyClients(config);
 	testIdleTimeout(config);
 	testStop(config);
+	testOverlap();
 	std::cout << "unit passed: " << g_passed << "   failed: " << g_failed
 		<< std::endl;
 	return (g_failed == 0 ? 0 : 1);

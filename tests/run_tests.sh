@@ -77,6 +77,12 @@ for CONF in tests/configs/invalid/*.conf; do
 	run_test "invalid $(basename "$CONF")" 1 $CHECK "$CONF"
 done
 
+echo "-- listen hosts are resolved at load"
+expect_output "unresolvable host"        "host not found in listen 'my_host.local:8500'" \
+	$CHECK tests/configs/invalid/listen_unresolvable.conf
+expect_output "localhost is 127.0.0.1"   "two server blocks without 'server_name' on listener 127.0.0.1:8310" \
+	$CHECK tests/configs/invalid/listen_alias_collision.conf
+
 echo "-- error messages point at the right line"
 expect_output "unknown directive line"   "line 3:"                  $CHECK tests/configs/invalid/unknown_server_directive.conf
 expect_output "missing semicolon line"   "line 2:"                  $CHECK tests/configs/invalid/missing_semicolon.conf
@@ -133,6 +139,24 @@ timeout 5 $BIN tests/configs/valid/bind.conf > "$SOCK_OUT" 2>&1
 SOCK_RC=$?
 if [ $SOCK_RC -eq 1 ]; then ok "second instance on the same ports exits 1"; else ko "second instance on the same ports exits 1 (got $SOCK_RC)"; fi
 if grep -q "cannot bind: Address already in use" "$SOCK_OUT"; then ok "port conflict names the reason"; else ko "port conflict names the reason"; fi
+kill -INT $SOCK_PID 2>/dev/null
+wait $SOCK_PID 2>/dev/null
+rm -f "$SOCK_OUT"
+
+echo "-- wildcard and specific address on one port: -t and a run agree"
+run_test "-t accepts the overlap" 0 $CHECK tests/configs/valid/listen_overlap.conf
+SOCK_OUT="$(mktemp /tmp/webserv_sock.XXXXXX)"
+$BIN tests/configs/valid/listen_overlap.conf > "$SOCK_OUT" 2>&1 &
+SOCK_PID=$!
+sleep 0.3
+if kill -0 $SOCK_PID 2>/dev/null; then ok "server starts instead of failing to bind"; else ko "server starts instead of failing to bind"; fi
+if ss -ltn 2>/dev/null | grep -q "0.0.0.0:8710 "; then ok "only the wildcard socket for 8710"; else ko "only the wildcard socket for 8710"; fi
+if ss -ltn 2>/dev/null | grep -q "127.0.0.1:8710 "; then ko "no separate 127.0.0.1:8710 socket"; else ok "no separate 127.0.0.1:8710 socket"; fi
+REPLY=$(timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/8710; printf "GET / HTTP/1.1\r\nHost: b.test\r\n\r\n" >&3; cat <&3' 2>/dev/null)
+case "$REPLY" in
+	"HTTP/1.1 200 OK"*) ok "answers on 127.0.0.1:8710" ;;
+	*) ko "answers on 127.0.0.1:8710" ;;
+esac
 kill -INT $SOCK_PID 2>/dev/null
 wait $SOCK_PID 2>/dev/null
 rm -f "$SOCK_OUT"

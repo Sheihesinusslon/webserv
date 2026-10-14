@@ -9,11 +9,11 @@
 class Connection
 {
 public:
-	Connection(int fd, const Listener &listener);
+	Connection(int fd, const Listener &local);
 	~Connection();
 
 	int				fd() const;
-	const Listener	&listener() const;
+	const Listener	&local() const;
 
 	std::string		&inBuffer();
 	std::string		&outBuffer();
@@ -33,7 +33,7 @@ private:
 	Connection	&operator=(const Connection &other);
 
 	int			_fd;
-	Listener	_listener;
+	Listener	_local;
 	std::string	_in;
 	std::string	_out;
 	bool		_close;

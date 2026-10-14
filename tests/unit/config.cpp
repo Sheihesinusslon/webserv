@@ -107,14 +107,15 @@ static void	testListenForms(void)
 	check("bare port gets the default host",
 		server.listensOn(Listener(DEFAULT_HOST, 8090)));
 	check("host:port is split", server.listensOn(Listener("127.0.0.1", 8091)));
-	check("host alone gets port 80", server.listensOn(Listener("localhost", 80)));
+	check("host alone gets port 80, resolved to its address",
+		server.listensOn(Listener("127.0.0.1", 80)));
 	checkEqual("duplicate listen deduped inside the server",
 		server.listens.size(), 3);
 	checkEqual("config listeners are unique", config.listeners().size(), 3);
 	check("deduped list still contains each distinct listener",
 		config.listeners()[0] == Listener(DEFAULT_HOST, 8090)
 		&& config.listeners()[1] == Listener("127.0.0.1", 8091)
-		&& config.listeners()[2] == Listener("localhost", 80));
+		&& config.listeners()[2] == Listener("127.0.0.1", 80));
 	check("listener key format",
 		Listener("127.0.0.1", 8091).key() == "127.0.0.1:8091");
 }
@@ -127,10 +128,12 @@ static void	testListenHosts(void)
 	if (!load(config, "tests/configs/valid/listen_hosts.conf"))
 		return ;
 	const ServerConfig	&server = config.servers()[0];
-	check("underscore host kept", server.listensOn(Listener("my_host.local", 8500)));
-	check("ipv4-mapped ipv6 kept",
+	check("hostname resolved to its ipv4 address",
+		server.listensOn(Listener("127.0.0.1", 8500)));
+	check("ipv4-mapped ipv6 stays ipv6",
 		server.listensOn(Listener("[::ffff:192.0.2.1]", 8501)));
-	check("ipv6 zone id kept", server.listensOn(Listener("[fe80::1%eth0]", 8502)));
+	check("ipv6 zone id becomes the interface index",
+		server.listensOn(Listener("[fe80::1%1]", 8502)));
 	check("bracketed ipv6 with port", server.listensOn(Listener("[::1]", 8503)));
 	check("bare ipv6 gets port 80", server.listensOn(Listener("[::1]", 80)));
 	check("ipv6 wildcard kept", server.listensOn(Listener("[::]", 8504)));

@@ -78,10 +78,37 @@ bool	Config::load(const std::string &path)
 		return (false);
 	}
 	normalizeNames();
-	if (!validate(path))
+	if (!resolveListens(path) || !validate(path))
 		return (false);
 	inherit();
 	collectListeners();
+	return (true);
+}
+
+bool	Config::resolveListens(const std::string &path)
+{
+	std::vector<Listener>	unique;
+	std::string				error;
+	std::size_t				i;
+	std::size_t				j;
+
+	for (i = 0; i < _servers.size(); i++)
+	{
+		unique.clear();
+		for (j = 0; j < _servers[i].listens.size(); j++)
+		{
+			Listener	listener = _servers[i].listens[j];
+
+			if (!listener.resolve(error))
+			{
+				_error = path + ": " + error;
+				return (false);
+			}
+			if (std::find(unique.begin(), unique.end(), listener) == unique.end())
+				unique.push_back(listener);
+		}
+		_servers[i].listens = unique;
+	}
 	return (true);
 }
 
@@ -198,21 +225,41 @@ void	Config::collectListeners()
 	{
 		for (j = 0; j < _servers[i].listens.size(); j++)
 		{
-			if (std::find(_listeners.begin(), _listeners.end(),
-					_servers[i].listens[j]) == _listeners.end())
-				_listeners.push_back(_servers[i].listens[j]);
+			const Listener	&listener = _servers[i].listens[j];
+
+			if (!listener.isWildcard() && hasServerOn(listener.wildcard()))
+				continue;
+			if (std::find(_listeners.begin(), _listeners.end(), listener)
+				== _listeners.end())
+				_listeners.push_back(listener);
 		}
 	}
 }
 
-const ServerConfig	*Config::matchServer(const Listener &listener,
+bool	Config::hasServerOn(const Listener &listener) const
+{
+	std::size_t	i;
+
+	for (i = 0; i < _servers.size(); i++)
+	{
+		if (_servers[i].listensOn(listener))
+			return (true);
+	}
+	return (false);
+}
+
+const ServerConfig	*Config::matchServer(const Listener &local,
 						const std::string &hostHeader) const
 {
 	const ServerConfig	*firstDeclared;
 	const ServerConfig	*nameless;
+	Listener			listener;
 	std::string			host;
 	std::size_t			i;
 
+	listener = local;
+	if (!hasServerOn(listener))
+		listener = local.wildcard();
 	host = toLower(stripPort(hostHeader));
 	firstDeclared = NULL;
 	nameless = NULL;
