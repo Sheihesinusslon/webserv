@@ -26,10 +26,14 @@ SRC_NET = \
 	net/EventLoop.cpp \
 	net/Socket.cpp
 
+SRC_HTTP = \
+	http/HttpRequest.cpp
+
 SRC = \
 	main.cpp \
 	$(SRC_CONFIG) \
-	$(SRC_NET)
+	$(SRC_NET) \
+	$(SRC_HTTP)
 
 SRC_BONUS = \
 	bonus/bonus.cpp

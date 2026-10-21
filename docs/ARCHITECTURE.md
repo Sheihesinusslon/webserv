@@ -9,7 +9,7 @@ the contracts between modules, and how each subject requirement maps to an owner
 |---|---|
 | A - config & routing | **done** - parse, validate, inherit, matchServer, matchLocation, resolvePath |
 | B - transport & event loop | **skeleton done** - `Socket`, `Connection`, `EventLoop`; answers a hardcoded `200 OK` until C plugs in. See [NET_MODULE.md](NET_MODULE.md) |
-| C - http & handlers | not started - no `include/http/`, no `src/http/` |
+| C - http & handlers | **in progress** - request parser done (`HttpRequest`, #7); response builder and handlers not started |
 | CGI | not started |
 | `www/` content + Python test suite | not started |
 
@@ -193,10 +193,33 @@ client actually reached (`getsockname`), not the socket's config address.
 ### B to C
 
 ```cpp
-HttpRequest::State  feed(const char* data, size_t n);   // Incomplete | Complete | Error
+HttpRequest::State  feed(const char* data, size_t n);   // Incomplete | HeadersDone | Complete | Error
+void                HttpRequest::setMaxBodySize(size_t limit);
 Result              RequestHandler::handle(const HttpRequest&, const Config&);
 const std::string&  HttpResponse::buffer() const;       // B drains across poll writes
 ```
+
+`HeadersDone` is the fourth state. `client_max_body_size` is a per-location setting and
+only the headers (`Host` + path) say which location applies, but the parser knows nothing
+about `Config`. So `feed()` stops once the headers are parsed, without reading any body.
+The caller then picks the server and location, calls `setMaxBodySize(limit)` and resumes
+with `feed(NULL, 0)`. A `Content-Length` over the limit is refused with 413 at that point,
+before the body is buffered; a chunked body is refused as soon as a chunk would pass the
+limit. Every request reports `HeadersDone` once, even a GET without a body.
+
+```cpp
+State s = req.feed(data, n);
+if (s == HttpRequest::HeadersDone)
+{
+    // ... matchServer / matchLocation ...
+    req.setMaxBodySize(location->clientMaxBodySize);
+    s = req.feed(NULL, 0);
+}
+// Complete -> handle(); Error -> answer req.errorStatus()
+```
+
+After `Complete`, `feed()` ignores new bytes. Take what followed the request with
+`takeLeftover()` (pipelining), then `reset()` and feed it back for the next request.
 
 For a static file, `handle()` can build the whole response and return it. For CGI it
 cannot: the script runs as a separate process and its output arrives later, through a
@@ -317,8 +340,8 @@ include/
   config/   Config.hpp  ServerConfig.hpp  LocationConfig.hpp  Listener.hpp
             ConfigParser.hpp  ConfigTokenizer.hpp  ConfigDump.hpp     (A)   exists
   net/      Socket.hpp  EventLoop.hpp  Connection.hpp                  (B)   exists
-  http/     HttpRequest.hpp  HttpResponse.hpp
-            RequestHandler.hpp  HttpStatus.hpp                      (C)   to write
+  http/     HttpRequest.hpp                                          (C)   exists
+            HttpResponse.hpp  RequestHandler.hpp  HttpStatus.hpp    (C)   to write
   cgi/      Cgi.hpp                                                 (B+C) to write
   bonus/    bonus-only headers
 src/

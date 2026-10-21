@@ -32,4 +32,8 @@
 # define CLIENT_TIMEOUT_SEC 60
 # define RECV_CHUNK_SIZE 8192
 
+# define MAX_REQUEST_LINE 8192	/* longer request line -> 414 */
+# define MAX_HEADER_SIZE 8192	/* all header lines together -> 431 */
+# define MAX_CHUNK_LINE 1024	/* chunk-size line (hex + extensions) -> 400 */
+
 #endif
