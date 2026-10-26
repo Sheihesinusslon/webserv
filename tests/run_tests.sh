@@ -194,7 +194,7 @@ UNIT_SRC="src/config/Config.cpp src/config/ConfigParser.cpp \
 	src/config/ConfigTokenizer.cpp src/config/Listener.cpp \
 	src/config/LocationConfig.cpp src/config/ServerConfig.cpp \
 	src/net/Connection.cpp src/net/EventLoop.cpp src/net/Socket.cpp \
-	src/http/HttpRequest.cpp"
+	src/http/HttpRequest.cpp src/http/RequestHandler.cpp"
 UNIT_CXXFLAGS="${UNIT_CXXFLAGS:--Wall -Wextra -Werror -std=c++98}"
 for UNIT_TEST in tests/unit/*.cpp; do
 	UNIT_BIN="$(mktemp -u /tmp/webserv_unit.XXXXXX)"

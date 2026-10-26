@@ -31,6 +31,7 @@
 # define POLL_INTERVAL_MS 1000
 # define CLIENT_TIMEOUT_SEC 60
 # define RECV_CHUNK_SIZE 8192
+# define CGI_TIMEOUT_SEC 30	/* script still running -> killed, 504 */
 
 # define MAX_REQUEST_LINE 8192	/* longer request line -> 414 */
 # define MAX_HEADER_SIZE 8192	/* all header lines together -> 431 */

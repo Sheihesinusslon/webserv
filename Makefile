@@ -27,7 +27,8 @@ SRC_NET = \
 	net/Socket.cpp
 
 SRC_HTTP = \
-	http/HttpRequest.cpp
+	http/HttpRequest.cpp \
+	http/RequestHandler.cpp
 
 SRC = \
 	main.cpp \

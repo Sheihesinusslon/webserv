@@ -9,7 +9,7 @@ the contracts between modules, and how each subject requirement maps to an owner
 |---|---|
 | A - config & routing | **done** - parse, validate, inherit, matchServer, matchLocation, resolvePath |
 | B - transport & event loop | **skeleton done** - `Socket`, `Connection`, `EventLoop`; answers a hardcoded `200 OK` until C plugs in. See [NET_MODULE.md](NET_MODULE.md) |
-| C - http & handlers | **in progress** - request parser done (`HttpRequest`, #7); response builder and handlers not started |
+| C - http & handlers | **in progress** - request parser done (`HttpRequest`, #7); B/C contract (`RequestHandler`, #6) with stub responses; response builder and handlers not started |
 | CGI | not started |
 | `www/` content + Python test suite | not started |
 
@@ -192,45 +192,100 @@ client actually reached (`getsockname`), not the socket's config address.
 
 ### B to C
 
+Declared in `include/http/HttpRequest.hpp` and `include/http/RequestHandler.hpp`.
+
 ```cpp
-HttpRequest::State  feed(const char* data, size_t n);   // Incomplete | HeadersDone | Complete | Error
+// parser: one per Connection, owned by B
+HttpRequest::State  HttpRequest::feed(const char *data, size_t n);  // Incomplete | HeadersDone | Complete | Error
 void                HttpRequest::setMaxBodySize(size_t limit);
-Result              RequestHandler::handle(const HttpRequest&, const Config&);
-const std::string&  HttpResponse::buffer() const;       // B drains across poll writes
+
+// handler: one per process, built from the Config, keeps no per-request state
+size_t         RequestHandler::bodyLimit(const HttpRequest &, const Client &) const;
+HandlerResult  RequestHandler::handle(const HttpRequest &, const Client &) const;
+HandlerResult  RequestHandler::finishCgi(const HttpRequest &, const Client &,
+                                         const std::string &output, bool timedOut) const;
 ```
+
+**What B passes in**
+
+| input | what it is |
+|---|---|
+| `HttpRequest` | the connection's parser, fed with the bytes B received |
+| `Client::local` | `Connection::local()`, the address the client reached (`getsockname`): `matchServer`, CGI `SERVER_*` |
+| `Client::peer` | the address the client came from (`accept`): CGI `REMOTE_ADDR` |
+| `Config` | given once, to the `RequestHandler` constructor |
+
+**What comes back** — a `HandlerResult`, one of two kinds:
+
+| `kind` | fields | B does |
+|---|---|---|
+| `Respond` | `response`: status line, headers and body, serialized; `close`: close once sent | append `response` to `_out`; if `close`, `markClose()`; otherwise keep the connection for the next request |
+| `CgiPending` | `cgi`: `pid`, `input` (script's stdin, `-1` if no body), `output` (script's stdout) | poll the pipes, then call `finishCgi()`, which always returns `Respond` |
+
+`response` is plain bytes, not an `HttpResponse`: C serializes with
+`HttpResponse::buffer()` and B never needs the type. `close` is C's decision because it
+depends on headers: HTTP/1.1 stays open unless `Connection: close`, HTTP/1.0 closes unless
+`Connection: keep-alive`, and a request the parser refused always closes.
+
+#### Feeding a request
 
 `HeadersDone` is the fourth state. `client_max_body_size` is a per-location setting and
 only the headers (`Host` + path) say which location applies, but the parser knows nothing
 about `Config`. So `feed()` stops once the headers are parsed, without reading any body.
-The caller then picks the server and location, calls `setMaxBodySize(limit)` and resumes
-with `feed(NULL, 0)`. A `Content-Length` over the limit is refused with 413 at that point,
-before the body is buffered; a chunked body is refused as soon as a chunk would pass the
-limit. Every request reports `HeadersDone` once, even a GET without a body.
+B asks the handler for the limit - B never reads `Host` itself - calls
+`setMaxBodySize(limit)` and resumes with `feed(NULL, 0)`. A `Content-Length` over the
+limit is refused with 413 at that point, before the body is buffered; a chunked body is
+refused as soon as a chunk would pass the limit. Every request reports `HeadersDone` once,
+even a GET without a body.
 
 ```cpp
-State s = req.feed(data, n);
+State s = request.feed(data, n);
 if (s == HttpRequest::HeadersDone)
 {
-    // ... matchServer / matchLocation ...
-    req.setMaxBodySize(location->clientMaxBodySize);
-    s = req.feed(NULL, 0);
+    request.setMaxBodySize(handler.bodyLimit(request, client));
+    s = request.feed(NULL, 0);
 }
-// Complete -> handle(); Error -> answer req.errorStatus()
+if (s == HttpRequest::Complete || s == HttpRequest::Error)
+    result = handler.handle(request, client);   // Error: answered with errorStatus()
 ```
 
 After `Complete`, `feed()` ignores new bytes. Take what followed the request with
 `takeLeftover()` (pipelining), then `reset()` and feed it back for the next request.
+Bytes that arrive while a response or a CGI is still pending stay in B's `_in` until then.
 
-For a static file, `handle()` can build the whole response and return it. For CGI it
+#### CGI: the pending answer
+
+For a static file, `handle()` builds the whole response and returns it. For CGI it
 cannot: the script runs as a separate process and its output arrives later, through a
 pipe. Waiting for it inside `handle()` would block the server, which is forbidden. So
-`handle()` also needs a way to say *"not finished yet — add this pipe fd to poll(), and
-call me again when it is readable"*. That second answer changes what a `Connection` has to
-remember (it may be waiting on a pipe, not just its own socket), so agree on it before
-connecting C to the loop rather than after.
+`handle()` starts the script and returns `CgiPending`; B moves the bytes; `finishCgi()`
+turns the script's output into the response.
 
-Today the loop has no C to call: `EventLoop::onReadable` uses two placeholder lines in
-place of `feed()` and `handle()` (see NET_MODULE.md).
+```
+  C  handle()       pipe + fork + execve, both fds O_NONBLOCK | FD_CLOEXEC,
+                    child's ends closed                  -> CgiPending{pid, input, output}
+  B  same poll()    input  POLLOUT -> write request.body(), close input after the last byte
+                    output POLLIN  -> read into a buffer on the Connection until read() <= 0
+  B  EOF            close output, waitpid(pid)           -> finishCgi(request, client, output, false)
+  B  timeout        CGI_TIMEOUT_SEC: kill + waitpid      -> finishCgi(request, client, output, true)
+  B  client gone    kill + waitpid, close both fds       -> finishCgi is not called
+  C  finishCgi()    parse the CGI headers and body       -> Respond (504 timed out, 502 bad output)
+```
+
+From the moment `handle()` returns `CgiPending`, B owns the pid and both fds: it closes
+them and reaps the process on every path, so there are no leaks and no zombies. C touches
+no fd after that.
+
+What this means for a `Connection`: besides its socket it may now hold a `CgiProcess`, how
+much of the body went into `input`, the output read so far and when the script started.
+The loop needs a pipe fd -> `Connection` lookup to dispatch pipe events. While a CGI is
+pending, `_out` is empty but the connection is not idle: a half-close must keep it, as it
+does for pending output.
+
+Wiring this into the loop is #15 (requests) and #18 (CGI pipes); starting the script and
+parsing its output is #17. Today `EventLoop::onReadable` still uses two placeholder lines
+in place of `feed()` and `handle()` (see NET_MODULE.md), and `handle()` / `finishCgi()`
+answer with built-in stub responses until #8 and #10 land.
 
 ---
 
@@ -238,7 +293,8 @@ place of `feed()` and `handle()` (see NET_MODULE.md).
 
 1. **B** — `poll()` reports a listening socket is readable; `accept()` a client.
 2. **B** — `poll()` reports the client is readable; `recv()` into its input buffer.
-3. **C** — `feed()` the new bytes. Not complete yet? Return to the loop.
+3. **C** — `feed()` the new bytes. At `HeadersDone`, `bodyLimit()` sets the location's
+   body limit before the body is read. Not complete yet? Return to the loop.
 4. **C** — normalise the URI: strip the query string, percent-decode, resolve `.` / `..`.
 5. **A** — resolve `host:port` + `Host` to a `ServerConfig`, then the normalised path to
    a `LocationConfig`, then `resolvePath()` to a filesystem path.
@@ -340,8 +396,8 @@ include/
   config/   Config.hpp  ServerConfig.hpp  LocationConfig.hpp  Listener.hpp
             ConfigParser.hpp  ConfigTokenizer.hpp  ConfigDump.hpp     (A)   exists
   net/      Socket.hpp  EventLoop.hpp  Connection.hpp                  (B)   exists
-  http/     HttpRequest.hpp                                          (C)   exists
-            HttpResponse.hpp  RequestHandler.hpp  HttpStatus.hpp    (C)   to write
+  http/     HttpRequest.hpp  RequestHandler.hpp                      (C)   exists
+            HttpResponse.hpp  HttpStatus.hpp                        (C)   to write
   cgi/      Cgi.hpp                                                 (B+C) to write
   bonus/    bonus-only headers
 src/
@@ -349,7 +405,8 @@ src/
   http/  cgi/                                                              to write
 tests/
   configs/  valid/ and invalid/ fixtures
-  unit/     config.cpp  matching.cpp  paths.cpp  loop.cpp - run by tests/run_tests.sh
+  unit/     config.cpp  matching.cpp  paths.cpp  loop.cpp
+            http_request.cpp  handler.cpp                  - run by tests/run_tests.sh
 ```
 
 `Listener` lives in `config/`, not `net/`: A produces it, B only consumes it. Keeping it
