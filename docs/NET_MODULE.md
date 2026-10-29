@@ -156,7 +156,9 @@ under a memory cap.)
 
 Two lines in `EventLoop::onReadable`. "Request complete" currently means "saw a blank
 line", and the response is a fixed `200 OK` — that is the seam where the HTTP module
-plugs in. Nothing else in the loop should change when it does.
+plugs in. The interface it plugs in with is fixed in ARCHITECTURE.md section 4 (*B to C*):
+for plain requests only these two lines change; a `CgiPending` answer adds pipe fds to
+the poll set and a `CgiProcess` to the `Connection`.
 
 Not yet: keep-alive (every response closes), CGI pipe fds in the poll set, partial-send
 coverage (needs a response larger than the socket buffer).
